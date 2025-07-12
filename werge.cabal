@@ -1,0 +1,37 @@
+cabal-version:   3.0
+name:            werge
+version:         0.1.0.0
+synopsis:        mergetool for mangled-up bite-size changes
+license:         GPL-3.0-or-later
+license-file:    LICENSE
+author:          Mirek Kratochvil
+maintainer:      exa.exa@gmail.com
+
+-- copyright:
+category:        Text
+build-type:      Simple
+extra-doc-files: CHANGELOG.md
+
+-- extra-source-files:
+
+common warnings
+  ghc-options: -Wall
+
+executable werge
+  import:           warnings
+  main-is:          Main.hs
+  other-modules:
+    Opts
+    Toks
+    Paths_werge
+
+  autogen-modules:  Paths_werge
+  build-depends:
+    , base                  >=4.15 && <5
+    , filepath
+    , optparse-applicative
+    , process
+    , temporary
+
+  hs-source-dirs:   .
+  default-language: Haskell2010

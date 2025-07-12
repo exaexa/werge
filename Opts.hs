@@ -1,0 +1,196 @@
+{-# LANGUAGE ApplicativeDo #-}
+{-# LANGUAGE RecordWildCards #-}
+
+module Opts where
+
+import Data.List
+import Data.Version (showVersion)
+import Options.Applicative
+import Paths_werge (version)
+
+data Tokenizer
+  = TokenizerFilter String
+  | TokenizeCharClass
+  | TokenizeCharClassSimple
+  deriving (Show)
+
+tokenizer =
+  asum
+    [ TokenizerFilter
+        <$> strOption
+              (long "tok-filter"
+                 <> short 'F'
+                 <> metavar "FILTER"
+                 <> help "external program to separate the text to tokens")
+    , flag'
+        TokenizeCharClassSimple
+        (long "simple-tokens"
+           <> short 'i'
+           <> help
+                "use wider character class to separate the tokens (results in larger tokens and ignores case)")
+    , flag'
+        TokenizeCharClass
+        (long "full-tokens"
+           <> short 'I'
+           <> help
+                "separate characters by all known character classes (default)")
+    , pure TokenizeCharClass
+    ]
+
+data Spaces
+  = SpacesConflict
+  | SpacesMy
+  | SpacesOld
+  | SpacesYour
+  deriving (Show)
+
+spaceMode x
+  | x `isPrefixOf` "conflict" = Right SpacesConflict
+  | x `isPrefixOf` "my" = Right SpacesMy
+  | x `isPrefixOf` "old" = Right SpacesOld
+  | x `isPrefixOf` "your" = Right SpacesYour
+  | otherwise =
+    Left
+      $ "could not parse value `"
+          ++ x
+          ++ "', use one of `conflict', `my', `old', and `your'"
+
+data Config = Config
+  { cfgTokenizer :: Tokenizer
+  , cfgSpaces :: Spaces
+  , cfgContext :: Int
+  , cfgZealous :: Bool
+  , cfgLabelStart :: String
+  , cfgLabelMyOld :: String
+  , cfgLabelOldYour :: String
+  , cfgLabelEnd :: String
+  } deriving (Show)
+
+config = do
+  cfgTokenizer <- tokenizer
+  cfgSpaces <-
+    option (eitherReader spaceMode)
+      $ long "spaces"
+          <> short 's'
+          <> metavar "(conflict|my|old|your)"
+          <> help
+               "mode of merging the spaces; instead of conflict one may choose to default the space from the source files (default: conflict)"
+          <> value SpacesConflict
+  cfgContext <-
+    option auto
+      $ long "expand-context"
+          <> short 'C'
+          <> metavar "N"
+          <> value 1
+          <> showDefault
+          <> help
+               "Consider changes that are at most N tokens apart to be a single change. Zero may cause bad resolutions of near conflicting edits."
+  cfgZealous <-
+    asum
+      [ flag' False $ long "no-zeal" <> help "avoid zealous mode (default)"
+      , flag' True
+          $ long "zeal"
+              <> short 'z'
+              <> help
+                   "try to zealously minify conflicts, potentially resolving them"
+      , pure False
+      ]
+  cfgLabelStart <-
+    strOption
+      $ long "label-start"
+          <> metavar "STRING"
+          <> value "<<<<<"
+          <> showDefault
+          <> help "label for beginning of the conflict"
+  cfgLabelMyOld <-
+    strOption
+      $ long "label-mo"
+          <> metavar "STRING"
+          <> value "|||||"
+          <> showDefault
+          <> help "separator of local edits and original"
+  cfgLabelOldYour <-
+    strOption
+      $ long "label-oy"
+          <> metavar "STRING"
+          <> value "====="
+          <> showDefault
+          <> help "separator of original and other people's edits"
+  cfgLabelEnd <-
+    strOption
+      $ long "label-end"
+          <> metavar "STRING"
+          <> value ">>>>>"
+          <> showDefault
+          <> help "label for end of the conflict"
+  -- TODO also should support -3 "only merge non-overlapping changes", -x "only
+  -- merge overlapping changes" and something that doesn't merge anything at
+  -- all (maybe better have negative flags?)
+  pure Config {..}
+
+data Command
+  = CmdDiff3
+      { d3my :: FilePath
+      , d3old :: FilePath
+      , d3your :: FilePath
+      }
+  | CmdGitMergetool
+      { gmtFiles :: Maybe [FilePath]
+      , gmtDoAdd :: Bool
+      }
+  deriving (Show)
+
+cmdDiff3 = do
+  d3my <- strArgument $ metavar "MYFILE" <> help "version with local edits"
+  d3old <- strArgument $ metavar "OLDFILE" <> help "original file version"
+  d3your <-
+    strArgument $ metavar "YOURFILE" <> help "version with other people's edits"
+  pure CmdDiff3 {..}
+
+cmdGitMergetool = do
+  gmtFiles <-
+    asum
+      [ fmap Just . many
+          $ strArgument
+          $ metavar "UNMERGED"
+              <> help "unmerged git file (can be specified repeatedly"
+      , flag'
+          Nothing
+          (long "unmerged"
+             <> short 'u'
+             <> help "process all files marked as unmerged by git")
+      ]
+  gmtDoAdd <-
+    asum
+      [ flag'
+          False
+          (long "add"
+             <> short 'a'
+             <> help "run `git add' for fully merged files")
+      , flag' True (long "no-add" <> help "prevent running `git add'")
+      , pure False
+      ]
+  pure CmdGitMergetool {..}
+
+cmd =
+  hsubparser
+    $ mconcat
+        [ command "merge"
+            $ info cmdDiff3
+            $ progDesc "diff3-style merge of changes"
+        , command "git"
+            $ info cmdGitMergetool
+            $ progDesc "try to merge unmerged git tree"
+        ]
+
+parseOpts :: IO (Config, Command)
+parseOpts =
+  customExecParser (prefs subparserInline)
+    $ info
+        (liftA2 (,) config cmd
+           <**> helper
+           <**> simpleVersioner (showVersion version))
+        (fullDesc
+           <> header
+                "werge -- blanks-friendly mergetool for tiny interdwindled changes"
+           <> (footer $ "werge is a free software, use it accordingly."))
