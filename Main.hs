@@ -32,7 +32,7 @@ rundiff f1 f2 out = do
            ])
           {std_in = NoStream, std_out = UseHandle oh, std_err = Inherit} $ \_ _ _ ->
         waitForProcess
-  when (st == ExitFailure 2) $ error "fatal: diff failed"
+  when (st == ExitFailure 2) $ error "diff failed"
   unless (st `elem` [ExitSuccess, ExitFailure 1])
     $ error "diff failed for unknown reason (is GNU diffutils installed?)"
 
@@ -66,7 +66,7 @@ align ((Keep, m):ms) ((Del, y):ys)
   | m == y = Conflict [m] [m] [] : align ms ys
 align ((Add, m):ms) ys = Conflict [m] [] [] : align ms ys
 align ms ((Add, y):ys) = Conflict [] [] [y] : align ms ys
-align _ _ = error "fatal: diffs do not align"
+align _ _ = error "diffs do not align"
 
 -- TODO this is quadratic, call regroup first and case it
 regroup :: [Merged] -> [Merged]
@@ -87,19 +87,36 @@ expand n = go
         go $ Conflict (m1 ++ a ++ m2) (o1 ++ a ++ o2) (y1 ++ a ++ y2) : xs
     go (x:xs) = x : go xs
 
-zeal = id -- TODO
+zeal (Conflict m o y) =
+  before' ++ (Conflict (reverse m'') o (reverse y'') : after')
+  where
+    ((m', y'), before) = pops m y
+    ((m'', y''), rafter) = pops (reverse m') (reverse y')
+    before' =
+      case before of
+        [] -> []
+        xs -> [Ok xs]
+    after' =
+      case rafter of
+        [] -> []
+        xs -> [Ok $ reverse xs]
+    pops (m:ms) (y:ys)
+      | m == y = (m :) <$> pops ms ys
+    pops ms ys = ((ms, ys), [])
+zeal x = [x]
 
-resolve _ c@(Conflict m o y)
+resolve Config {..} c@(Conflict m o y)
   | m == o && o == y = Ok o
-  | m == o = Ok y
-  | o == y = Ok m
-  | m == y = Ok m
-resolve cfg x = x
+  | m == o && cfgResolveSeparate = Ok y
+  | o == y && cfgResolveSeparate = Ok m
+  | m == y && cfgResolveOverlaps = Ok m
+resolve _ x = x
 
 merge cfg@Config {..} ms ys =
   regroup
     . map (resolve cfg)
-    . bool id zeal cfgZealous
+    . regroup
+    . bool id (concatMap zeal) cfgZealous
     . expand cfgContext
     . regroup
     $ align ms ys
@@ -129,7 +146,7 @@ runCmd CmdDiff3 {..} cfg =
     let [fMy, fOld, fYour, fdMy, fdYour] =
           map (workdir </>) ["my", "old", "your", "mydiff", "yourdiff"]
     for_ [(d3my, fMy), (d3old, fOld), (d3your, fYour)] $ \(path, tmp) ->
-      readFile path >>= writeFile tmp . Toks.split
+      readFile path >>= writeFile tmp . Toks.split -- TODO cfg
     rundiff fOld fMy fdMy
     rundiff fOld fYour fdYour
     conflicted <- merge cfg <$> pdiff fdMy <*> pdiff fdYour >>= format cfg

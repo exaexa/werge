@@ -64,6 +64,9 @@ data Config = Config
   , cfgLabelMyOld :: String
   , cfgLabelOldYour :: String
   , cfgLabelEnd :: String
+  , cfgResolveSpaces :: Bool
+  , cfgResolveOverlaps :: Bool
+  , cfgResolveSeparate :: Bool
   } deriving (Show)
 
 config = do
@@ -123,9 +126,13 @@ config = do
           <> value ">>>>>"
           <> showDefault
           <> help "label for end of the conflict"
-  -- TODO also should support -3 "only merge non-overlapping changes", -x "only
-  -- merge overlapping changes" and something that doesn't merge anything at
-  -- all (maybe better have negative flags?)
+  cfgResolveOverlaps <-
+    fmap not . switch
+      $ long "conflict-overlaps" <> help "do not resolve overlapping changes"
+  cfgResolveSeparate <-
+    fmap not . switch
+      $ long "conflict-separate"
+          <> help "do not resolve separate (non-overlapping) changes"
   pure Config {..}
 
 data Command
