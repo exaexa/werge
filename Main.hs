@@ -68,23 +68,30 @@ align ((Add, m):ms) ys = Conflict [m] [] [] : align ms ys
 align ms ((Add, y):ys) = Conflict [] [] [y] : align ms ys
 align _ _ = error "diffs do not align"
 
--- TODO this is quadratic, call regroup first and case it
 regroup :: [Merged] -> [Merged]
 regroup [] = []
 regroup (Ok []:xs) = regroup xs
-regroup (Ok a:Ok b:xs) = regroup (Ok (a ++ b) : xs)
+regroup (x@(Ok a):xs) =
+  case regroup xs of
+    (Ok b:xs') -> Ok (a ++ b) : xs'
+    xs' -> x : xs'
 regroup (Conflict [] [] []:xs) = regroup xs
-regroup (Conflict m1 o1 y1:Conflict m2 o2 y2:xs) =
-  regroup (Conflict (m1 ++ m2) (o1 ++ o2) (y1 ++ y2) : xs)
+regroup (x@(Conflict m1 o1 y1):xs) =
+  case regroup xs of
+    (Conflict m2 o2 y2:xs') -> Conflict (m1 ++ m2) (o1 ++ o2) (y1 ++ y2) : xs'
+    xs' -> x : xs'
 regroup (x:xs) = x : regroup xs
 
 expand :: Int -> [Merged] -> [Merged]
 expand n = go
   where
     go [] = []
-    go (Conflict m1 o1 y1:Ok a:Conflict m2 o2 y2:xs)
-      | length a <= n =
-        go $ Conflict (m1 ++ a ++ m2) (o1 ++ a ++ o2) (y1 ++ a ++ y2) : xs
+    go (x@(Conflict m1 o1 y1):xs) =
+      case go xs of
+        (Ok a:Conflict m2 o2 y2:xs')
+          | length a <= n ->
+            Conflict (m1 ++ a ++ m2) (o1 ++ a ++ o2) (y1 ++ a ++ y2) : xs'
+        xs' -> x : xs'
     go (x:xs) = x : go xs
 
 zeal (Conflict m o y) =
