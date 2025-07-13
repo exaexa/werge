@@ -23,6 +23,9 @@ unmarkSpace ('.':s) = s
 unmarkSpace ('|':s) = s
 unmarkSpace _ = error "wat"
 
+space ('.':_) = True
+space _ = False
+
 split =
   unlines
     . map (concatMap escape . markSpace)

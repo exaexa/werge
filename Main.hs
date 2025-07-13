@@ -112,12 +112,30 @@ zeal (Conflict m o y) =
     pops ms ys = ((ms, ys), [])
 zeal x = [x]
 
-resolve Config {..} c@(Conflict m o y)
+resolve cfg@Config {..} c@(Conflict m o y)
+  | all Toks.space (concat [m, o, y]) && cfgSpaces /= SpacesNormal =
+    resolveSpace cfg c
   | m == o && o == y = Ok o
   | m == o && cfgResolveSeparate = Ok y
   | o == y && cfgResolveSeparate = Ok m
   | m == y && cfgResolveOverlaps = Ok m
 resolve _ x = x
+
+-- TODO: there might be a bit of interplay between the spaces handling and
+-- separate/overlapped conflict resolution -- e.g., what if someone wants to
+-- merge overlapping edits in text but separate edits in spaces? At this point
+-- that might be ignorable.
+resolveSpace Config {..} c@(Conflict m o y)
+  | m == o && o == y = Ok o
+  | otherwise =
+    case cfgSpaces of
+      SpacesConflict -> c
+      SpacesMy -> Ok m
+      SpacesOld -> Ok o
+      SpacesYour -> Ok y
+      _ -> error "spaces resolution failed"
+
+resolveSpaces _ x = x
 
 merge cfg@Config {..} ms ys =
   regroup

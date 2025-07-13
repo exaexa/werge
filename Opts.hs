@@ -38,13 +38,15 @@ tokenizer =
     ]
 
 data Spaces
-  = SpacesConflict
+  = SpacesNormal
+  | SpacesConflict
   | SpacesMy
   | SpacesOld
   | SpacesYour
-  deriving (Show)
+  deriving (Show, Eq)
 
 spaceMode x
+  | x `isPrefixOf` "normal" = Right SpacesNormal
   | x `isPrefixOf` "conflict" = Right SpacesConflict
   | x `isPrefixOf` "my" = Right SpacesMy
   | x `isPrefixOf` "old" = Right SpacesOld
@@ -53,7 +55,7 @@ spaceMode x
     Left
       $ "could not parse value `"
           ++ x
-          ++ "', use one of `conflict', `my', `old', and `your'"
+          ++ "', use one of `normal', `conflict', `my', `old', and `your'"
 
 data Config = Config
   { cfgTokenizer :: Tokenizer
@@ -75,10 +77,10 @@ config = do
     option (eitherReader spaceMode)
       $ long "spaces"
           <> short 's'
-          <> metavar "(conflict|my|old|your)"
+          <> metavar "(normal|conflict|my|old|your)"
           <> help
-               "mode of merging the spaces; instead of conflict one may choose to default the space from the source files (default: conflict)"
-          <> value SpacesConflict
+               "mode of merging the space-only changes; instead of usual resolution one may choose to always conflict or to default the space from the source files (default: normal)"
+          <> value SpacesNormal
   cfgContext <-
     option auto
       $ long "expand-context"
