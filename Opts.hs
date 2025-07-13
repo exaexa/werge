@@ -188,10 +188,10 @@ cmd =
     $ mconcat
         [ command "merge"
             $ info cmdDiff3
-            $ progDesc "diff3-style merge of changes"
+            $ progDesc "diff3-style merge of two changesets"
         , command "git"
             $ info cmdGitMerge
-            $ progDesc "try to merge unmerged git tree"
+            $ progDesc "automerge unmerged files in git conflict"
         ]
 
 parseOpts :: IO (Config, Command)
