@@ -5,7 +5,10 @@ module Main where
 import Control.Exception
 import Control.Monad
 import Data.Bool
+import Data.Char
 import Data.Foldable
+import Data.List
+import Data.Traversable
 import Opts
 import System.Exit
 import System.FilePath
@@ -35,6 +38,59 @@ rundiff f1 f2 out = do
   when (st == ExitFailure 2) $ error "diff failed"
   unless (st `elem` [ExitSuccess, ExitFailure 1])
     $ error "diff failed for unknown reason (is GNU diffutils installed?)"
+
+gitRepoRelRoot = do
+  (path, st) <-
+    withCreateProcess
+      (proc "git" ["rev-parse", "--show-cdup"])
+        {std_in = NoStream, std_out = CreatePipe, std_err = Inherit} $ \_ (Just oh) _ p ->
+      (,) <$> hGetContents' oh <*> waitForProcess p
+  unless (st == ExitSuccess) $ error "git failed"
+  let [p] = lines path
+  pure p
+
+gitUnmerged = do
+  (paths, st) <-
+    withCreateProcess
+      (proc "git" ["status", "--porcelain=v1"])
+        {std_in = NoStream, std_out = CreatePipe, std_err = Inherit} $ \_ (Just oh) _ p ->
+      (,)
+        <$> (map (drop 3) . filter ("UU " `isPrefixOf`) . lines
+               <$> hGetContents' oh)
+        <*> waitForProcess p
+  unless (st == ExitSuccess) $ error "git failed"
+  pure paths
+
+gitCheckoutMOY u my old your = do
+  (paths, st) <-
+    withCreateProcess
+      (proc "git" ["ls-files", "--unmerged", "--", u])
+        {std_in = NoStream, std_out = CreatePipe, std_err = Inherit} $ \_ (Just oh) _ p ->
+      (,)
+        <$> (sortOn snd
+               . map ((\[a, b] -> (a, b)) . take 2 . drop 1 . words)
+               . lines
+               <$> hGetContents' oh)
+        <*> waitForProcess p
+  unless (st == ExitSuccess) $ error "git failed"
+  let co (hash, _) path = do
+        st <-
+          withCreateProcess
+            (proc "git" ["cat-file", "blob", hash])
+              {std_in = NoStream, std_out = CreatePipe, std_err = Inherit} $ \_ (Just ho) _ p -> do
+            hGetContents ho >>= writeFile path . Toks.split -- TODO cfg
+            waitForProcess p
+        unless (st == ExitSuccess) . error
+          $ "failed checking out " ++ u ++ " from blob " ++ hash
+  case paths of
+    [(_, "1"), (_, "2"), (_, "3")] ->
+      zipWithM co paths [old, my, your] >> pure ()
+    _ -> error $ "bad data from ls-files for unmerged " ++ u
+
+gitAdd path = do
+  traceM $ "adding " ++ path
+  st <- rawSystem "git" ["add", "--", path]
+  unless (st == ExitSuccess) $ error "git-add failed"
 
 data Op
   = Del
@@ -125,6 +181,14 @@ resolve _ x = x
 -- separate/overlapped conflict resolution -- e.g., what if someone wants to
 -- merge overlapping edits in text but separate edits in spaces? At this point
 -- that might be ignorable.
+--
+-- Also, conflicts that are made out of an ignorable space change and a
+-- mergeable non-space change now cause conflicts because the spaces are no
+-- longer truly separable/alignable here. Ideally some part of the space
+-- merging should be done at alignment (e.g., fake all spaces to cause them to
+-- align well). Also it might be necessary to group space-tokens together
+-- (newline and indent are now 2 space tokens, which won't ever merge with a
+-- single space)
 resolveSpace Config {..} c@(Conflict m o y)
   | m == o && o == y = Ok o
   | otherwise =
@@ -140,21 +204,22 @@ resolveSpaces _ x = x
 merge cfg@Config {..} ms ys =
   regroup
     . map (resolve cfg)
+    . traceShowId
     . regroup
     . bool id (concatMap zeal) cfgZealous
     . expand cfgContext
     . regroup
     $ align ms ys
 
-format :: Config -> [Merged] -> IO Bool
-format Config {..} = go False
+format :: Config -> Handle -> [Merged] -> IO Bool
+format Config {..} h = go False
   where
     go c [] = pure c
     go c (Ok x:xs) = do
-      putStr (Toks.glueToks x)
+      hPutStr h (Toks.glueToks x)
       go c xs
     go c (Conflict m o y:xs) = do
-      putStr
+      hPutStr h
         $ mconcat
             [ cfgLabelStart
             , Toks.glueToks m
@@ -174,11 +239,36 @@ runCmd CmdDiff3 {..} cfg =
       readFile path >>= writeFile tmp . Toks.split -- TODO cfg
     rundiff fOld fMy fdMy
     rundiff fOld fYour fdYour
-    conflicted <- merge cfg <$> pdiff fdMy <*> pdiff fdYour >>= format cfg
+    conflicted <-
+      merge cfg <$> pdiff fdMy <*> pdiff fdYour >>= format cfg stdout
     if conflicted
       then exitWith (ExitFailure 1)
       else exitSuccess
-runCmd _ _ = error "not implemented yet"
+runCmd CmdGitMerge {..} cfg = do
+  relroot <- gitRepoRelRoot
+  unmerged <-
+    case gmFiles of
+      Nothing -> map (relroot </>) <$> gitUnmerged
+      Just fs -> pure fs
+  conflicts <-
+    for unmerged $ \u ->
+      withSystemTempDirectory "werge-git" $ \workdir -> do
+        let [fMy, fOld, fYour, fdMy, fdYour] =
+              map (workdir </>) ["my", "old", "your", "mydiff", "yourdiff"]
+        gitCheckoutMOY u fMy fOld fYour
+        rundiff fOld fMy fdMy
+        rundiff fOld fYour fdYour
+        readFile u >>= writeFile (u ++ ".werge-backup")
+        conflict <-
+          withFile u WriteMode $ \h ->
+            merge cfg <$> pdiff fdMy <*> pdiff fdYour >>= format cfg h
+        traceShowM conflict
+        traceShowM gmDoAdd
+        unless conflict $ when gmDoAdd $ gitAdd u
+        pure conflict
+  if or conflicts
+    then exitWith (ExitFailure 1)
+    else exitSuccess
 
 main :: IO ()
 main = catch go bad

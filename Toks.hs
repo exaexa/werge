@@ -21,7 +21,7 @@ markSpace s@(c:_)
 
 unmarkSpace ('.':s) = s
 unmarkSpace ('|':s) = s
-unmarkSpace _ = error "wat"
+unmarkSpace x = error "unwat"
 
 space ('.':_) = True
 space _ = False

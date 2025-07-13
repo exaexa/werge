@@ -143,9 +143,9 @@ data Command
       , d3old :: FilePath
       , d3your :: FilePath
       }
-  | CmdGitMergetool
-      { gmtFiles :: Maybe [FilePath]
-      , gmtDoAdd :: Bool
+  | CmdGitMerge
+      { gmFiles :: Maybe [FilePath]
+      , gmDoAdd :: Bool
       }
   deriving (Show)
 
@@ -156,31 +156,33 @@ cmdDiff3 = do
     strArgument $ metavar "YOURFILE" <> help "version with other people's edits"
   pure CmdDiff3 {..}
 
-cmdGitMergetool = do
-  gmtFiles <-
+cmdGitMerge = do
+  gmFiles <-
     asum
-      [ fmap Just . many
+      [ fmap Just . some
           $ strArgument
           $ metavar "UNMERGED"
-              <> help "unmerged git file (can be specified repeatedly"
+              <> help "unmerged git file (can be specified repeatedly)"
       , flag'
           Nothing
           (long "unmerged"
              <> short 'u'
              <> help "process all files marked as unmerged by git")
       ]
-  gmtDoAdd <-
+  gmDoAdd <-
     asum
       [ flag'
-          False
+          True
           (long "add"
              <> short 'a'
              <> help "run `git add' for fully merged files")
-      , flag' True (long "no-add" <> help "prevent running `git add'")
+      , flag' False (long "no-add" <> help "prevent running `git add'")
       , pure False
       ]
-  pure CmdGitMergetool {..}
+  pure CmdGitMerge {..}
 
+-- TODO have some option to output the (partially merged) my/old/your files so
+-- that folks can continue with external program or so (such as meld)
 cmd =
   hsubparser
     $ mconcat
@@ -188,7 +190,7 @@ cmd =
             $ info cmdDiff3
             $ progDesc "diff3-style merge of changes"
         , command "git"
-            $ info cmdGitMergetool
+            $ info cmdGitMerge
             $ progDesc "try to merge unmerged git tree"
         ]
 
