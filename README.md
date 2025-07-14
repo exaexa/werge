@@ -108,5 +108,3 @@ Available commands:
 
 werge is a free software, use it accordingly.
 ```
-
-## External tokenizer
