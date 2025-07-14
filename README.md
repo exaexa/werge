@@ -14,7 +14,41 @@ These properties are great for several use-cases:
 - minimizing the conflict size of tiny changes to a few characters, making them
   easier to resolve
 
-Better docs is WIP
+## How does it work?
+
+- Instead of lines, the files are torn to small tokens (words, spaces, symbols,
+  ...) and these are diffed and merged individually.
+- Some tokens are marked as spaces by the tokenizer, which allows the merge
+  algorithm to be (selectively) more zealous when resolving conflicts on these.
+
+Tokenizers are simple, implementable as linear scanners that print separate
+tokens on individual lines that are prefixed with a space mark (`.` for space
+and `|` for non-space), and also escape newlines and backslashes. A default
+tokenization of string "hello \ world" with a new line at the end is listed
+below (note the invisible space on the lines with dots):
+
+```
+|hello
+. 
+|\\
+. 
+|world
+.\n
+```
+
+Users may supply any tokenizer via option `-F`, e.g. this script makes
+line-size tokens (reproducing the usual line merges):
+
+```
+#!/usr/bin/env python3
+import sys
+for l in sys.stdin.readlines():
+    if len(l)==0: continue
+    if l[-1]=='\n':
+        print('|'+l[:-1].replace('\\','\\\\')+'\\n')
+    else:
+        print('|'+l.replace('\\','\\\\'))
+```
 
 ## Installation
 
@@ -74,3 +108,5 @@ Available commands:
 
 werge is a free software, use it accordingly.
 ```
+
+## External tokenizer
