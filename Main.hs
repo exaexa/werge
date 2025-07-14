@@ -5,27 +5,36 @@ module Main where
 import Control.Exception
 import Control.Monad
 import Data.Bool
-import Data.Char
 import Data.Foldable
 import Data.List
+import Data.Maybe
 import Data.Traversable
 import Opts
+import System.Environment
 import System.Exit
 import System.FilePath
 import System.IO
 import System.IO.Temp
 import System.Process
+
 import qualified Toks
 
-import Debug.Trace
+{-
+ - interface to other programs
+ -}
+diffProg = fromMaybe "diff" <$> lookupEnv "WERGE_DIFF"
 
--- TODO: the diff w
+gitProg = fromMaybe "git" <$> lookupEnv "WERGE_GIT"
+
+bracketFile path mode = bracket (openFile path mode) hClose
+
 rundiff f1 f2 out = do
+  diff <- diffProg
   st <-
-    withFile out WriteMode $ \oh ->
+    bracketFile out WriteMode $ \oh ->
       withCreateProcess
         (proc
-           "diff" -- TODO: from WERGE_DIFF env
+           diff
            [ "--text"
            , "--new-line-format=+%L"
            , "--old-line-format=-%L"
@@ -33,27 +42,28 @@ rundiff f1 f2 out = do
            , f1
            , f2
            ])
-          {std_in = NoStream, std_out = UseHandle oh, std_err = Inherit} $ \_ _ _ ->
-        waitForProcess
+          {std_in = NoStream, std_out = UseHandle oh} $ \_ _ _ -> waitForProcess
   when (st == ExitFailure 2) $ error "diff failed"
   unless (st `elem` [ExitSuccess, ExitFailure 1])
     $ error "diff failed for unknown reason (is GNU diffutils installed?)"
 
 gitRepoRelRoot = do
+  git <- gitProg
   (path, st) <-
     withCreateProcess
-      (proc "git" ["rev-parse", "--show-cdup"])
-        {std_in = NoStream, std_out = CreatePipe, std_err = Inherit} $ \_ (Just oh) _ p ->
+      (proc git ["rev-parse", "--show-cdup"])
+        {std_in = NoStream, std_out = CreatePipe} $ \_ (Just oh) _ p ->
       (,) <$> hGetContents' oh <*> waitForProcess p
   unless (st == ExitSuccess) $ error "git failed"
   let [p] = lines path
   pure p
 
 gitUnmerged = do
+  git <- gitProg
   (paths, st) <-
     withCreateProcess
-      (proc "git" ["status", "--porcelain=v1"])
-        {std_in = NoStream, std_out = CreatePipe, std_err = Inherit} $ \_ (Just oh) _ p ->
+      (proc git ["status", "--porcelain=v1"])
+        {std_in = NoStream, std_out = CreatePipe} $ \_ (Just oh) _ p ->
       (,)
         <$> (map (drop 3) . filter ("UU " `isPrefixOf`) . lines
                <$> hGetContents' oh)
@@ -61,11 +71,12 @@ gitUnmerged = do
   unless (st == ExitSuccess) $ error "git failed"
   pure paths
 
-gitCheckoutMOY u my old your = do
+gitCheckoutMOY cfg u my old your = do
+  git <- gitProg
   (paths, st) <-
     withCreateProcess
-      (proc "git" ["ls-files", "--unmerged", "--", u])
-        {std_in = NoStream, std_out = CreatePipe, std_err = Inherit} $ \_ (Just oh) _ p ->
+      (proc git ["ls-files", "--unmerged", "--", u])
+        {std_in = NoStream, std_out = CreatePipe} $ \_ (Just oh) _ p ->
       (,)
         <$> (sortOn snd
                . map ((\[a, b] -> (a, b)) . take 2 . drop 1 . words)
@@ -77,8 +88,8 @@ gitCheckoutMOY u my old your = do
         st <-
           withCreateProcess
             (proc "git" ["cat-file", "blob", hash])
-              {std_in = NoStream, std_out = CreatePipe, std_err = Inherit} $ \_ (Just ho) _ p -> do
-            hGetContents ho >>= writeFile path . Toks.split -- TODO cfg
+              {std_in = NoStream, std_out = CreatePipe} $ \_ (Just ho) _ p -> do
+            hSplitToFile cfg ho path
             waitForProcess p
         unless (st == ExitSuccess) . error
           $ "failed checking out " ++ u ++ " from blob " ++ hash
@@ -88,10 +99,30 @@ gitCheckoutMOY u my old your = do
     _ -> error $ "bad data from ls-files for unmerged " ++ u
 
 gitAdd path = do
-  traceM $ "adding " ++ path
-  st <- rawSystem "git" ["add", "--", path]
+  git <- gitProg
+  st <- rawSystem git ["add", "--", path]
   unless (st == ExitSuccess) $ error "git-add failed"
 
+{-
+ - configurable splitting
+ -}
+hSplitToFile cfg h path =
+  case cfgTokenizer cfg of
+    TokenizeCharCategory -> internal Toks.splitCategory
+    TokenizeCharCategorySimple -> internal Toks.splitSimple
+    TokenizeFilter cmd -> do
+      st <-
+        bracketFile path WriteMode $ \ho ->
+          withCreateProcess
+            (shell cmd) {std_in = UseHandle h, std_out = UseHandle ho} $ \_ _ _ ->
+            waitForProcess
+      unless (st == ExitSuccess) $ error "tokenize filter failed"
+  where
+    internal s = hGetContents h >>= writeFile path . Toks.toFile . s
+
+{-
+ - merge algorithms
+ -}
 data Op
   = Del
   | Keep
@@ -100,10 +131,10 @@ data Op
 
 pdiff path = map go . lines <$> readFile path
   where
-    go [] = error "empty line from diff"
     go ('-':s) = (Del, s)
     go (' ':s) = (Keep, s)
     go ('+':s) = (Add, s)
+    go [] = error "unexpected output from diff"
 
 data Merged
   = Ok [String]
@@ -204,29 +235,31 @@ resolveSpaces _ x = x
 merge cfg@Config {..} ms ys =
   regroup
     . map (resolve cfg)
-    . traceShowId
     . regroup
     . bool id (concatMap zeal) cfgZealous
     . expand cfgContext
     . regroup
     $ align ms ys
 
+{-
+ - front-end
+ -}
 format :: Config -> Handle -> [Merged] -> IO Bool
 format Config {..} h = go False
   where
     go c [] = pure c
     go c (Ok x:xs) = do
-      hPutStr h (Toks.glueToks x)
+      hPutStr h (Toks.glue x)
       go c xs
     go c (Conflict m o y:xs) = do
       hPutStr h
         $ mconcat
             [ cfgLabelStart
-            , Toks.glueToks m
+            , Toks.glue m
             , cfgLabelMyOld
-            , Toks.glueToks o
+            , Toks.glue o
             , cfgLabelOldYour
-            , Toks.glueToks y
+            , Toks.glue y
             , cfgLabelEnd
             ]
       go True xs
@@ -236,7 +269,7 @@ runCmd CmdDiff3 {..} cfg =
     let [fMy, fOld, fYour, fdMy, fdYour] =
           map (workdir </>) ["my", "old", "your", "mydiff", "yourdiff"]
     for_ [(d3my, fMy), (d3old, fOld), (d3your, fYour)] $ \(path, tmp) ->
-      readFile path >>= writeFile tmp . Toks.split -- TODO cfg
+      bracketFile path ReadMode $ \h -> hSplitToFile cfg h tmp
     rundiff fOld fMy fdMy
     rundiff fOld fYour fdYour
     conflicted <-
@@ -255,15 +288,13 @@ runCmd CmdGitMerge {..} cfg = do
       withSystemTempDirectory "werge-git" $ \workdir -> do
         let [fMy, fOld, fYour, fdMy, fdYour] =
               map (workdir </>) ["my", "old", "your", "mydiff", "yourdiff"]
-        gitCheckoutMOY u fMy fOld fYour
+        gitCheckoutMOY cfg u fMy fOld fYour
         rundiff fOld fMy fdMy
         rundiff fOld fYour fdYour
         readFile u >>= writeFile (u ++ ".werge-backup")
         conflict <-
-          withFile u WriteMode $ \h ->
+          bracketFile u WriteMode $ \h ->
             merge cfg <$> pdiff fdMy <*> pdiff fdYour >>= format cfg h
-        traceShowM conflict
-        traceShowM gmDoAdd
         unless conflict $ when gmDoAdd $ gitAdd u
         pure conflict
   if or conflicts

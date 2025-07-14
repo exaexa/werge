@@ -26,11 +26,28 @@ unmarkSpace x = error "unwat"
 space ('.':_) = True
 space _ = False
 
-split =
-  unlines
-    . map (concatMap escape . markSpace)
-    . groupBy ((==) `on` generalCategory)
+joinSpaces [] = []
+joinSpaces (a@('.':as):xs) =
+  case joinSpaces xs of
+    (('.':bs):xs') -> ('.' : (as ++ bs)) : xs'
+    xs' -> a : xs'
+joinSpaces (x:xs) = x : joinSpaces xs
 
-glueToks = concatMap (unmarkSpace . unescape)
+splitCategory = make . groupBy ((==) `on` generalCategory)
 
-glue = glueToks . lines
+simpleCategory c
+  | isSpace c = 0
+  | isAlpha c = 1
+  | isNumber c = 2
+  | otherwise = 3
+
+splitSimple = make . groupBy ((==) `on` simpleCategory)
+
+make = map (concatMap escape . markSpace)
+
+glue :: [String] -> String
+glue = concatMap (unmarkSpace . unescape)
+
+fromFile = lines
+
+toFile = unlines

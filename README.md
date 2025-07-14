@@ -22,6 +22,11 @@ Better docs is WIP
 cabal install
 ```
 
+Running of `werge` requires a working installation of `diff` compatible
+with the one from [GNU diffutils](https://www.gnu.org/software/diffutils/). You
+may set up a path to such `diff` (or a wrapper script) via environment variable
+`WERGE_DIFF`.
+
 ## Help & features
 
 ```

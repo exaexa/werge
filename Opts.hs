@@ -9,32 +9,32 @@ import Options.Applicative
 import Paths_werge (version)
 
 data Tokenizer
-  = TokenizerFilter String
-  | TokenizeCharClass
-  | TokenizeCharClassSimple
+  = TokenizeFilter String
+  | TokenizeCharCategory
+  | TokenizeCharCategorySimple
   deriving (Show)
 
 tokenizer =
   asum
-    [ TokenizerFilter
+    [ TokenizeFilter
         <$> strOption
               (long "tok-filter"
                  <> short 'F'
                  <> metavar "FILTER"
                  <> help "external program to separate the text to tokens")
     , flag'
-        TokenizeCharClassSimple
+        TokenizeCharCategorySimple
         (long "simple-tokens"
            <> short 'i'
            <> help
                 "use wider character class to separate the tokens (results in larger tokens and ignores case)")
     , flag'
-        TokenizeCharClass
+        TokenizeCharCategory
         (long "full-tokens"
            <> short 'I'
            <> help
                 "separate characters by all known character classes (default)")
-    , pure TokenizeCharClass
+    , pure TokenizeCharCategory
     ]
 
 data Spaces
