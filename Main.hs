@@ -18,6 +18,7 @@ import System.IO.Temp
 import System.Process
 
 import qualified Toks
+import Toks (Tok)
 
 {-
  - interface to other programs
@@ -105,6 +106,9 @@ gitAdd path = do
 
 {-
  - configurable splitting
+ -
+ - TODO this should probably enforce joinSpaces?
+ - or have joinSpaces as configurable? (probably best, default true)
  -}
 hSplitToFile cfg h path =
   case cfgTokenizer cfg of
@@ -123,12 +127,15 @@ hSplitToFile cfg h path =
 {-
  - merge algorithms
  -}
+despace toks = filter (not . Toks.space)
+
 data Op
   = Del
   | Keep
   | Add
   deriving (Show, Eq)
 
+pdiff :: FilePath -> IO [(Op, Tok)]
 pdiff path = map go . lines <$> readFile path
   where
     go ('-':s) = (Del, s)
@@ -169,6 +176,36 @@ regroup (x@(Conflict m1 o1 y1):xs) =
     xs' -> x : xs'
 regroup (x:xs) = x : regroup xs
 
+respace :: Config -> [Tok] -> [Tok] -> [Tok] -> [Merged] -> [Merged]
+respace Config {..} m o y cs = go m o y cs
+  where
+    decide m o y =
+      case cfgSpaces of
+        SpacesConflict -> Conflict m o y
+        SpacesMy -> Ok m
+        SpacesOld -> Ok o
+        SpacesYour -> Ok y
+    go m o y []
+      | all (all Toks.space) [m, o, y] = [decide m o y]
+      | otherwise = error "respace trailed"
+    go m o y (Ok a:cs) =
+      let [(sm, rm), (so, ro), (sy, ry)] = map (re True a) [m, o, y]
+       in decide sm so sy : go rm ro ry cs
+    go m o y (Conflict m' o' y':cs) =
+      let [(sm, rm), (so, ro), (sy, ry)] =
+            zipWith (re False) [m', o', y'] [m, o, y]
+       in Conflict sm so sy : go rm ro ry cs
+    re False [] sp = ([], sp)
+    re True [] sp = break (not . Toks.space) sp
+    re greedy (t:ts) sp =
+      let (sp0, sp') = break (not . Toks.space) sp
+       in case sp' of
+            (s:ss)
+              | s == t ->
+                let (sp1, rest) = re greedy ts ss
+                 in (sp0 ++ s : sp1, rest)
+            [] -> error "respace misaligned"
+
 expand :: Int -> [Merged] -> [Merged]
 expand n = go
   where
@@ -181,7 +218,7 @@ expand n = go
         xs' -> x : xs'
     go (x:xs) = x : go xs
 
-zeal (Conflict m o y) =
+zeal Config {..} (Conflict m o y) =
   before' ++ (Conflict (reverse m'') o (reverse y'') : after')
   where
     ((m', y'), before) = pops m y
@@ -196,8 +233,14 @@ zeal (Conflict m o y) =
         xs -> [Ok $ reverse xs]
     pops (m:ms) (y:ys)
       | m == y = (m :) <$> pops ms ys
+      | SpacesMy <- cfgSpaces
+      , Toks.space m
+      , Toks.space y = (m :) <$> pops ms ys
+      | SpacesYour <- cfgSpaces
+      , Toks.space m
+      , Toks.space y = (y :) <$> pops ms ys
     pops ms ys = ((ms, ys), [])
-zeal x = [x]
+zeal _ x = [x]
 
 resolve cfg@Config {..} c@(Conflict m o y)
   | all Toks.space (concat [m, o, y]) && cfgSpaces /= SpacesNormal =
@@ -232,11 +275,12 @@ resolveSpace Config {..} c@(Conflict m o y)
 
 resolveSpaces _ x = x
 
+-- TODO mix in the despace & respace
 merge cfg@Config {..} ms ys =
   regroup
     . map (resolve cfg)
     . regroup
-    . bool id (concatMap zeal) cfgZealous
+    . bool id (concatMap $ zeal cfg) cfgZealous
     . expand cfgContext
     . regroup
     $ align ms ys
