@@ -3,7 +3,9 @@
 
 module Opts where
 
+import Data.Bool
 import Data.List
+import Data.Maybe
 import Data.Version (showVersion)
 import Options.Applicative
 import Paths_werge (version)
@@ -100,33 +102,31 @@ config = do
                    "try to zealously minify conflicts, potentially resolving them"
       , pure False
       ]
-  cfgLabelStart <-
-    strOption
+  color <-
+    flag False True
+      $ long "color"
+          <> short 'G'
+          <> help
+               "use shorter, gaily colored output markers by default (requires ANSI color support; good for terminals or `less -R')"
+  labelStart <-
+    optional . strOption
       $ long "label-start"
-          <> metavar "STRING"
-          <> value "<<<<<"
-          <> showDefault
+          <> metavar "\"<<<<<\""
           <> help "label for beginning of the conflict"
-  cfgLabelMyOld <-
-    strOption
+  labelMyOld <-
+    optional . strOption
       $ long "label-mo"
-          <> metavar "STRING"
-          <> value "|||||"
-          <> showDefault
+          <> metavar "\"|||||\""
           <> help "separator of local edits and original"
-  cfgLabelOldYour <-
-    strOption
+  labelOldYour <-
+    optional . strOption
       $ long "label-oy"
-          <> metavar "STRING"
-          <> value "====="
-          <> showDefault
+          <> metavar "\"=====\""
           <> help "separator of original and other people's edits"
-  cfgLabelEnd <-
-    strOption
+  labelEnd <-
+    optional . strOption
       $ long "label-end"
-          <> metavar "STRING"
-          <> value ">>>>>"
-          <> showDefault
+          <> metavar "\">>>>>\""
           <> help "label for end of the conflict"
   cfgResolveOverlaps <-
     fmap not . switch
@@ -135,7 +135,18 @@ config = do
     fmap not . switch
       $ long "conflict-separate"
           <> help "do not resolve separate (non-overlapping) changes"
-  pure Config {..}
+  pure
+    Config
+      { cfgLabelStart =
+          bool "<<<<<" "\ESC[1;37m<\ESC[0;31m" color `fromMaybe` labelStart
+      , cfgLabelMyOld =
+          bool "|||||" "\ESC[1;37m|\ESC[1;30m" color `fromMaybe` labelMyOld
+      , cfgLabelOldYour =
+          bool "=====" "\ESC[1;37m=\ESC[0;32m" color `fromMaybe` labelOldYour
+      , cfgLabelEnd =
+          bool ">>>>>" "\ESC[1;37m>\ESC[0m" color `fromMaybe` labelEnd
+      , ..
+      }
 
 data Command
   = CmdDiff3
@@ -196,7 +207,7 @@ cmd =
 
 parseOpts :: IO (Config, Command)
 parseOpts =
-  customExecParser (prefs subparserInline)
+  customExecParser (prefs helpShowGlobals)
     $ info
         (liftA2 (,) config cmd
            <**> helper
