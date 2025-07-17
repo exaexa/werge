@@ -23,66 +23,127 @@ tokenizer =
               (long "tok-filter"
                  <> short 'F'
                  <> metavar "FILTER"
-                 <> help "external program to separate the text to tokens")
+                 <> help "External program to separate the text to tokens")
     , flag'
         TokenizeCharCategorySimple
         (long "simple-tokens"
            <> short 'i'
            <> help
-                "use wider character class to separate the tokens (results in larger tokens and ignores case)")
+                "Use wider character class to separate the tokens (results in larger tokens and ignores case)")
     , flag'
         TokenizeCharCategory
         (long "full-tokens"
            <> short 'I'
            <> help
-                "separate characters by all known character classes (default)")
+                "Separate characters by all known character classes (default)")
     , pure TokenizeCharCategory
     ]
 
-data Spaces
-  = SpacesNormal
-  | SpacesConflict
-  | SpacesMy
-  | SpacesOld
-  | SpacesYour
+data ConflictMask = ConflictMask
+  { cmResolveOverlaps :: Bool
+  , cmResolveSeparate :: Bool
+  } deriving (Show)
+
+conflictMask label objs = do
+  cmResolveOverlaps' <-
+    fmap not . switch
+      $ long (label ++ "-overlaps")
+          <> help ("Never resolve overlapping changes in " ++ objs)
+  cmResolveSeparate' <-
+    fmap not . switch
+      $ long (label ++ "-separate")
+          <> help
+               ("Never resolve separate (non-overlapping) changes in " ++ objs)
+  cmAll <-
+    fmap not . switch
+      $ long (label ++ "-all") <> help ("Never resolve any changes in " ++ objs)
+  pure
+    ConflictMask
+      { cmResolveSeparate = cmResolveSeparate' && cmAll
+      , cmResolveOverlaps = cmResolveOverlaps' && cmAll
+      }
+
+data Resolution
+  = ResolveKeep
+  | ResolveMy
+  | ResolveOld
+  | ResolveYour
+  deriving (Show, Eq)
+
+resolutionMode x
+  | x `isPrefixOf` "keep" = Right ResolveKeep
+  | x `isPrefixOf` "my" = Right ResolveMy
+  | x `isPrefixOf` "old" = Right ResolveOld
+  | x `isPrefixOf` "your" = Right ResolveYour
+  | otherwise =
+    Left
+      $ "Could not parse value `"
+          ++ x
+          ++ "', use one of `keep', `my', `old', and `your'"
+
+data SpaceResolution
+  = SpaceNormal
+  | SpaceSpecial Resolution
   deriving (Show, Eq)
 
 spaceMode x
-  | x `isPrefixOf` "normal" = Right SpacesNormal
-  | x `isPrefixOf` "conflict" = Right SpacesConflict
-  | x `isPrefixOf` "my" = Right SpacesMy
-  | x `isPrefixOf` "old" = Right SpacesOld
-  | x `isPrefixOf` "your" = Right SpacesYour
+  | x `isPrefixOf` "normal" = Right SpaceNormal
+  | Right y <- resolutionMode x = Right (SpaceSpecial y)
   | otherwise =
     Left
-      $ "could not parse value `"
+      $ "Could not parse value `"
           ++ x
-          ++ "', use one of `normal', `conflict', `my', `old', and `your'"
+          ++ "', use one of `normal', `keep', `my', `old', and `your'"
 
 data Config = Config
   { cfgTokenizer :: Tokenizer
-  , cfgSpaces :: Spaces
-  , cfgContext :: Int
   , cfgZealous :: Bool
+  , cfgSpaceRetain :: Resolution
+  , cfgSpaceResolution :: SpaceResolution
+  , cfgSpaceConflicts :: ConflictMask
+  , cfgContext :: Int
+  , cfgResolution :: Resolution
+  , cfgConflicts :: ConflictMask
   , cfgLabelStart :: String
   , cfgLabelMyOld :: String
   , cfgLabelOldYour :: String
   , cfgLabelEnd :: String
-  , cfgResolveSpaces :: Bool
-  , cfgResolveOverlaps :: Bool
-  , cfgResolveSeparate :: Bool
   } deriving (Show)
 
 config = do
   cfgTokenizer <- tokenizer
-  cfgSpaces <-
-    option (eitherReader spaceMode)
-      $ long "spaces"
-          <> short 's'
-          <> metavar "(normal|conflict|my|old|your)"
+  cfgZealous <-
+    asum
+      [ flag' False $ long "no-zeal" <> help "avoid zealous mode (default)"
+      , flag' True
+          $ long "zeal"
+              <> short 'z'
+              <> help
+                   "Try to zealously minify conflicts, potentially resolving them"
+      , pure False
+      ]
+  cfgSpaceRetain <-
+    option (eitherReader resolutionMode)
+      $ long "space"
+          <> short 'S'
+          <> metavar "(keep|my|old|your)"
           <> help
-               "mode of merging the space-only changes; instead of usual resolution one may choose to always conflict or to default the space from the source files (default: normal)"
-          <> value SpacesNormal
+               "Retain spacing from a selected version, or keep all space changes for merging (default: keep)"
+          <> value ResolveKeep
+  cfgSpaceResolution <-
+    asum
+      [ flag' (SpaceSpecial ResolveKeep)
+          $ short 's'
+              <> help
+                   "Shortcut for `--resolve-space keep' (this separates space-only conflicts, enabling better automated resolution)"
+      , option (eitherReader spaceMode)
+          $ long "resolve-space"
+              <> metavar ("(normal|keep|my|old|your)")
+              <> value SpaceNormal
+              <> help
+                   "Resolve conflicts in space-only tokens separately, and either keep unresolved conflicts, or resolve in favor of a given version; `normal' resolves the spaces together with other tokens, ignoring choices in --resolve-space-* (default: normal)"
+      ]
+  cfgSpaceConflicts <- conflictMask "conflict-space" "space-only tokens"
   cfgContext <-
     option auto
       $ long "expand-context"
@@ -91,50 +152,41 @@ config = do
           <> value 1
           <> showDefault
           <> help
-               "Consider changes that are at most N tokens apart to be a single change. Zero may cause bad resolutions of near conflicting edits."
-  cfgZealous <-
-    asum
-      [ flag' False $ long "no-zeal" <> help "avoid zealous mode (default)"
-      , flag' True
-          $ long "zeal"
-              <> short 'z'
-              <> help
-                   "try to zealously minify conflicts, potentially resolving them"
-      , pure False
-      ]
+               "Consider changes that are at most N tokens apart to be a single change. Zero may cause bad resolutions of near conflicting edits"
+  cfgResolution <-
+    option (eitherReader resolutionMode)
+      $ long "resolve"
+          <> metavar "(keep|my|old|your)"
+          <> value ResolveKeep
+          <> help
+               "Resolve general conflicts in favor of a given version, or keep the conflicts (default: keep)"
+  cfgConflicts <- conflictMask "conflict" "general tokens"
   color <-
     flag False True
       $ long "color"
           <> short 'G'
           <> help
-               "use shorter, gaily colored output markers by default (requires ANSI color support; good for terminals or `less -R')"
+               "Use shorter, gaily colored output markers by default (requires ANSI color support; good for terminals or `less -R')"
   labelStart <-
     optional . strOption
       $ long "label-start"
           <> metavar "\"<<<<<\""
-          <> help "label for beginning of the conflict"
+          <> help "Label for beginning of the conflict"
   labelMyOld <-
     optional . strOption
       $ long "label-mo"
           <> metavar "\"|||||\""
-          <> help "separator of local edits and original"
+          <> help "Separator of local edits and original"
   labelOldYour <-
     optional . strOption
       $ long "label-oy"
           <> metavar "\"=====\""
-          <> help "separator of original and other people's edits"
+          <> help "Separator of original and other people's edits"
   labelEnd <-
     optional . strOption
       $ long "label-end"
           <> metavar "\">>>>>\""
-          <> help "label for end of the conflict"
-  cfgResolveOverlaps <-
-    fmap not . switch
-      $ long "conflict-overlaps" <> help "do not resolve overlapping changes"
-  cfgResolveSeparate <-
-    fmap not . switch
-      $ long "conflict-separate"
-          <> help "do not resolve separate (non-overlapping) changes"
+          <> help "Label for end of the conflict"
   pure
     Config
       { cfgLabelStart =
@@ -161,10 +213,10 @@ data Command
   deriving (Show)
 
 cmdDiff3 = do
-  d3my <- strArgument $ metavar "MYFILE" <> help "version with local edits"
-  d3old <- strArgument $ metavar "OLDFILE" <> help "original file version"
+  d3my <- strArgument $ metavar "MYFILE" <> help "Version with local edits"
+  d3old <- strArgument $ metavar "OLDFILE" <> help "Original file version"
   d3your <-
-    strArgument $ metavar "YOURFILE" <> help "version with other people's edits"
+    strArgument $ metavar "YOURFILE" <> help "Version with other people's edits"
   pure CmdDiff3 {..}
 
 cmdGitMerge = do
@@ -173,12 +225,12 @@ cmdGitMerge = do
       [ fmap Just . some
           $ strArgument
           $ metavar "UNMERGED"
-              <> help "unmerged git file (can be specified repeatedly)"
+              <> help "Unmerged git file (can be specified repeatedly)"
       , flag'
           Nothing
           (long "unmerged"
              <> short 'u'
-             <> help "process all files marked as unmerged by git")
+             <> help "Process all files marked as unmerged by git")
       ]
   gmDoAdd <-
     asum
@@ -186,8 +238,8 @@ cmdGitMerge = do
           True
           (long "add"
              <> short 'a'
-             <> help "run `git add' for fully merged files")
-      , flag' False (long "no-add" <> help "prevent running `git add'")
+             <> help "Run `git add' for fully merged files")
+      , flag' False (long "no-add" <> help "Prevent running `git add'")
       , pure False
       ]
   pure CmdGitMerge {..}
@@ -202,7 +254,7 @@ cmd =
             $ progDesc "diff3-style merge of two changesets"
         , command "git"
             $ info cmdGitMerge
-            $ progDesc "automerge unmerged files in git conflict"
+            $ progDesc "Automerge unmerged files in git conflict"
         ]
 
 parseOpts :: IO (Config, Command)
@@ -215,4 +267,4 @@ parseOpts =
         (fullDesc
            <> header
                 "werge -- blanks-friendly mergetool for tiny interdwindled changes"
-           <> (footer $ "werge is a free software, use it accordingly."))
+           <> footer "werge is a free software, use it accordingly.")

@@ -244,25 +244,31 @@ zeal Config {..} (Conflict m o y) =
         xs -> [Ok $ reverse xs]
     pops (m:ms) (y:ys)
       | m == y = (m :) <$> pops ms ys
-      | SpacesMy <- cfgSpaces
+      | cfgSpaceRetain == ResolveMy
       , Toks.space m
       , Toks.space y = (m :) <$> pops ms ys
-      | SpacesYour <- cfgSpaces
+      | cfgSpaceRetain == ResolveYour
       , Toks.space m
       , Toks.space y = (y :) <$> pops ms ys
     pops ms ys = ((ms, ys), [])
 zeal _ x = [x]
 
 resolveSpace Config {..} c@(Conflict m o y)
-  | not (all Toks.space $ concat [m, o, y])
-      || cfgSpaces `elem` [SpacesNormal, SpacesConflict] = c
+  | not (all Toks.space $ concat [m, o, y]) = c
   | m == o && o == y = Ok o
-  | otherwise =
-    case cfgSpaces of
-      SpacesMy -> Ok m
-      SpacesOld -> Ok o
-      SpacesYour -> Ok y
-      _ -> error $ "spaces resolution error " ++ show cfgSpaces
+  | cfgSpaceRetain == ResolveMy = Ok m
+  | cfgSpaceRetain == ResolveOld = Ok o
+  | cfgSpaceRetain == ResolveYour = Ok y
+  | cfgSpaceResolution == SpaceNormal = c
+  | cmResolveSeparate cfgSpaceConflicts && m == o = Ok y
+  | cmResolveSeparate cfgSpaceConflicts && o == y = Ok m
+  | cmResolveOverlaps cfgSpaceConflicts && m == y = Ok m
+  | SpaceSpecial r <- cfgSpaceResolution =
+    case r of
+      ResolveMy -> Ok m
+      ResolveOld -> Ok o
+      ResolveYour -> Ok y
+      ResolveKeep -> c
 resolveSpace _ x = x
 
 expand :: Int -> [Merged] -> [Merged]
@@ -280,12 +286,18 @@ expand n = go
     go (x:xs) = x : go xs
 
 resolve cfg@Config {..} c@(Conflict m o y)
-  | cfgSpaces /= SpacesNormal && all Toks.space (concat [m, o, y]) =
-    resolveSpace cfg c
+  | cfgSpaceResolution /= SpaceNormal
+  , all Toks.space (concat [m, o, y]) = resolveSpace cfg c
   | m == o && o == y = Ok o
-  | m == o && cfgResolveSeparate = Ok y
-  | o == y && cfgResolveSeparate = Ok m
-  | m == y && cfgResolveOverlaps = Ok m
+  | cmResolveSeparate cfgConflicts && m == o = Ok y
+  | cmResolveSeparate cfgConflicts && o == y = Ok m
+  | cmResolveOverlaps cfgConflicts && m == y = Ok m
+  | otherwise =
+    case cfgResolution of
+      ResolveMy -> Ok m
+      ResolveOld -> Ok o
+      ResolveYour -> Ok y
+      ResolveKeep -> c
 resolve _ x = x
 
 merge cfg@Config {..} ms ys =
