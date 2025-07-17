@@ -79,9 +79,9 @@ I still cannot do verses.
 - Some tokens are marked as spaces by the tokenizer, which allows the merge
   algorithm to be (selectively) more zealous when resolving conflicts on these.
 
-This approach differs from various other structured-merge tools by being
-completely oblivious about the file structure. Werge trades off some merge
-quality for (a lot of) complexity.
+Compared to e.g. `difftastic`, `mergiraf` and similar tools, **`werge` is
+completely oblivious about the actual file structure** and works on any file
+type. This choice trades off some merge quality for (a lot of) complexity.
 
 Tokenizers are simple, implementable as linear scanners that print separate
 tokens on individual lines that are prefixed with a space mark (`.` for space
