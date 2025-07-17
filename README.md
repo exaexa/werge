@@ -101,7 +101,7 @@ below (note the invisible space on the lines with dots):
 Users may supply any tokenizer via option `-F`, e.g. this script makes
 line-size tokens (reproducing the usual line merges):
 
-```
+```py
 #!/usr/bin/env python3
 import sys
 for l in sys.stdin.readlines():
