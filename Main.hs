@@ -182,12 +182,19 @@ expand n = go
     go [] = []
     go (x@(Conflict m1 o1 y1):xs) =
       case go xs of
-        (Conflict m2 o2 y2:xs') ->
+        (Conflict m2 o2 y2:xs') | n > 0 ->
           Conflict (m1 ++ m2) (o1 ++ o2) (y1 ++ y2) : xs'
         (Ok a:Conflict m2 o2 y2:xs')
-          | length a <= n ->
+          | length a < n ->
             Conflict (m1 ++ a ++ m2) (o1 ++ a ++ o2) (y1 ++ a ++ y2) : xs'
         xs' -> x : xs'
+    go (x@(Replace o1 n1):xs) = case go xs of
+      (Replace o2 n2:xs') | n > 0 ->
+          Replace (o1++o2) (n1++n2): xs'
+      (Ok a:Replace o2 n2:xs')
+        | length a < n ->
+          Replace (o1++a++o2) (n1++a++n2): xs'
+      xs' -> x : xs'
     go (x:xs) = x : go xs
 
 resolve :: Config -> Merged -> Merged
@@ -217,6 +224,8 @@ merge cfg@Config {..} ms ys =
     . regroup
     $ align (chunks ms) (chunks ys)
 
+diff Config{..} = expand cfgContext . chunks
+
 {-
  - front-end
  -}
@@ -239,7 +248,11 @@ format Config {..} h = go False
             , cfgLabelEnd
             ]
       go True xs
-    go _ _ = error "bad format (replace)"
+    go _ (Replace o n:xs) = do
+      hPutStr h
+        $ mconcat
+            [cfgLabelStart, Toks.glue o, cfgLabelDiff, Toks.glue n, cfgLabelEnd]
+      go True xs
 
 runCmd :: Command -> Config -> IO ()
 runCmd CmdDiff3 {..} cfg =
@@ -278,6 +291,16 @@ runCmd CmdGitMerge {..} cfg = do
   if or conflicts
     then exitWith (ExitFailure 1)
     else exitSuccess
+runCmd CmdDiff {..} cfg = do
+  withSystemTempDirectory "werge-diff" $ \workdir -> do
+    let [fOld, fNew, fDiff] = map (workdir </>) ["old", "new", "diff"]
+    for_ [(diffOld, fOld), (diffNew, fNew)] $ \(path, tmp) ->
+      bracketFile path ReadMode $ \h -> hSplitToFile cfg h tmp
+    rundiff fOld fNew fDiff
+    conflicted <- pdiff fDiff >>= format cfg stdout . diff cfg
+    if conflicted
+      then exitWith (ExitFailure 1)
+      else exitSuccess
 
 main :: IO ()
 main = catch go bad

@@ -110,6 +110,7 @@ data Config = Config
   , cfgConflicts :: ConflictMask
   , cfgLabelStart :: String
   , cfgLabelMyOld :: String
+  , cfgLabelDiff :: String
   , cfgLabelOldYour :: String
   , cfgLabelEnd :: String
   } deriving (Show)
@@ -154,10 +155,10 @@ config = do
       $ long "expand-context"
           <> short 'C'
           <> metavar "N"
-          <> value 1
+          <> value 2
           <> showDefault
           <> help
-               "Consider changes that are at most N tokens apart to be a single change. Zero may cause bad resolutions of near conflicting edits"
+               "Consider changes that are at less than N tokens apart to be a single change; 0 turns off conflict expansion, 1 may cause bad resolutions of near conflicting edits"
   cfgResolution <-
     option (eitherReader resolutionMode)
       $ long "resolve"
@@ -182,6 +183,11 @@ config = do
       $ long "label-mo"
           <> metavar "\"|||||\""
           <> help "Separator of local edits and original"
+  labelDiff <-
+    optional . strOption
+      $ long "label-diff"
+          <> metavar "\"|||||\""
+          <> help "Separator for old and new version"
   labelOldYour <-
     optional . strOption
       $ long "label-oy"
@@ -198,6 +204,8 @@ config = do
           bool "<<<<<" "\ESC[1;37m<\ESC[0;31m" color `fromMaybe` labelStart
       , cfgLabelMyOld =
           bool "|||||" "\ESC[1;37m|\ESC[1;30m" color `fromMaybe` labelMyOld
+      , cfgLabelDiff =
+          bool "|||||" "\ESC[1;37m|\ESC[0;32m" color `fromMaybe` labelDiff
       , cfgLabelOldYour =
           bool "=====" "\ESC[1;37m=\ESC[0;32m" color `fromMaybe` labelOldYour
       , cfgLabelEnd =
@@ -215,6 +223,10 @@ data Command
       { gmFiles :: Maybe [FilePath]
       , gmDoAdd :: Bool
       }
+  | CmdDiff
+    { diffOld :: FilePath
+    , diffNew :: FilePath
+    }
   deriving (Show)
 
 cmdDiff3 :: Parser Command
@@ -252,6 +264,12 @@ cmdGitMerge = do
       ]
   pure CmdGitMerge {..}
 
+cmdDiff :: Parser Command
+cmdDiff = do
+  diffOld <- strArgument $ metavar "OLDFILE" <> help "Original file version"
+  diffNew <- strArgument $ metavar "NEWFILE" <> help "File version with changes"
+  pure CmdDiff {..}
+
 -- TODO have some option to output the (partially merged) my/old/your files so
 -- that folks can continue with external program or so (such as meld)
 cmd :: Parser Command
@@ -264,6 +282,9 @@ cmd =
         , command "git"
             $ info cmdGitMerge
             $ progDesc "Automerge unmerged files in git conflict"
+        , command "diff"
+            $ info cmdDiff
+            $ progDesc "Highlight differences between two files"
         ]
 
 parseOpts :: IO (Config, Command)
