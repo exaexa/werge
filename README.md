@@ -144,15 +144,15 @@ automatically to `filename.werge-backup`.
 ```
 werge -- blanks-friendly mergetool for tiny interdwindled changes
 
-Usage: werge [(-F|--tok-filter FILTER) | (-i|--simple-tokens) | 
-               (-I|--full-tokens)] [--no-zeal | (-z|--zeal)] 
-             [-S|--space (keep|my|old|your)] 
-             [-s | --resolve-space (normal|keep|my|old|your)] 
-             [--conflict-space-overlaps] [--conflict-space-separate] 
-             [--conflict-space-all] [-C|--expand-context N] 
-             [--resolve (keep|my|old|your)] [--conflict-overlaps] 
-             [--conflict-separate] [--conflict-all] [-G|--color] 
-             [--label-start "<<<<<"] [--label-mo "|||||"] [--label-oy "====="] 
+Usage: werge [(-F|--tok-filter FILTER) | (-i|--simple-tokens) |
+               (-I|--full-tokens)] [--no-zeal | (-z|--zeal)]
+             [-S|--space (keep|my|old|your)]
+             [-s | --resolve-space (normal|keep|my|old|your)]
+             [--conflict-space-overlaps] [--conflict-space-separate]
+             [--conflict-space-all] [-C|--expand-context N]
+             [--resolve (keep|my|old|your)] [--conflict-overlaps]
+             [--conflict-separate] [--conflict-all] [-G|--color]
+             [--label-start "<<<<<"] [--label-mo "|||||"] [--label-oy "====="]
              [--label-end ">>>>>"] COMMAND
 
 Available options:
