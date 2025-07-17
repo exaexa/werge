@@ -156,6 +156,11 @@ isKeepTok _ = False
 isDelTok (Del, _) = True
 isDelTok _ = False
 
+-- TODO: Diff output is not necessarily deterministic; we could make the chunk
+-- sequences more unique by rolling them to front (or back), possibly enabling
+-- more conflict resolution and preventing mismerges.
+--
+-- Example: " a " can be made out of " {+a +}" or "{+ a+} "
 chunks :: [(Op, String)] -> [Merged]
 chunks [] = []
 chunks xs@((Keep, _):_) =

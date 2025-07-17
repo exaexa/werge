@@ -225,7 +225,7 @@ cmdGitMerge = do
       [ fmap Just . some
           $ strArgument
           $ metavar "UNMERGED"
-              <> help "Unmerged git file (can be specified repeatedly)"
+              <> help "Unmerged file tracked by git (can be specified repeatedly)"
       , flag'
           Nothing
           (long "unmerged"
