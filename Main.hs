@@ -6,6 +6,7 @@ import Control.Exception
 import Control.Monad
 import Data.Bool
 import Data.Foldable
+import Data.Function
 import Data.List
 import Data.Maybe
 import Data.Traversable
@@ -19,6 +20,8 @@ import System.Process
 
 import qualified Toks
 import Toks (Tok)
+
+import Debug.Trace
 
 {-
  - interface to other programs
@@ -127,8 +130,6 @@ hSplitToFile cfg h path =
 {-
  - merge algorithms
  -}
-despace toks = filter (not . Toks.space)
-
 data Op
   = Del
   | Keep
@@ -145,22 +146,79 @@ pdiff path = map go . lines <$> readFile path
 
 data Merged
   = Ok [String]
+  | Replace [String] [String]
   | Conflict [String] [String] [String]
   deriving (Show)
 
-align :: [(Op, String)] -> [(Op, String)] -> [Merged]
-align [] [] = []
-align ((Keep, m):ms) ((Keep, y):ys)
-  | m == y = Ok [m] : align ms ys
-align ((Del, m):ms) ((Del, y):ys)
-  | m == y = Conflict [] [m] [] : align ms ys
-align ((Del, m):ms) ((Keep, y):ys)
-  | m == y = Conflict [] [m] [m] : align ms ys
-align ((Keep, m):ms) ((Del, y):ys)
-  | m == y = Conflict [m] [m] [] : align ms ys
-align ((Add, m):ms) ys = Conflict [m] [] [] : align ms ys
-align ms ((Add, y):ys) = Conflict [] [] [y] : align ms ys
-align _ _ = error "diffs do not align"
+isKeepTok (Keep, _) = True
+isKeepTok _ = False
+
+isDelTok (Del, _) = True
+isDelTok _ = False
+
+chunks :: [(Op, String)] -> [Merged]
+chunks [] = []
+chunks xs@((Keep, _):_) =
+  let (oks, ys) = span isKeepTok xs
+   in Ok (map snd oks) : chunks ys
+chunks xs =
+  let (reps, ys) = break isKeepTok xs
+   in uncurry (Replace `on` map snd) (partition isDelTok reps) : chunks ys
+
+align1 as [] = ([], as, [])
+align1 [] bs = ([], [], bs)
+align1 (a:as) (b:bs)
+  | a == b
+  , (xs, as', bs') <- align1 as bs = (a : xs, as', bs')
+align1 _ _ = error "chunks do not align"
+
+align :: [Merged] -> [Merged] -> [Merged]
+align m y = connect $ slice m y
+  where
+    erase x = Replace x []
+    nemap _ [] = []
+    nemap f xs = [f xs]
+    slice (Ok m:ms) (Ok y:ys) =
+      let (ok, m', y') = align1 m y
+       in (Ok ok, Ok ok) : slice (nemap Ok m' ++ ms) (nemap Ok y' ++ ys)
+    slice (Replace m mr:ms) (Ok y:ys) =
+      let (ok, m', y') = align1 m y
+       in (Replace ok mr, Ok ok)
+            : slice (nemap erase m' ++ ms) (nemap Ok y' ++ ys)
+    slice (Ok m:ms) (Replace y yr:ys) =
+      let (ok, m', y') = align1 m y
+       in (Ok ok, Replace ok yr)
+            : slice (nemap Ok m' ++ ms) (nemap erase y' ++ ys)
+    slice (Replace m mr:ms) (Replace y yr:ys) =
+      let (ok, m', y') = align1 m y
+       in (Replace ok mr, Replace ok yr)
+            : slice (nemap erase m' ++ ms) (nemap erase y' ++ ys)
+    slice [Replace [] mr] [] = [(Replace [] mr, Ok [])]
+    slice [] [Replace [] yr] = [(Ok [], Replace [] yr)]
+    slice [] [] = []
+    slice _ _ = error "unacceptable chunks"
+    coFlag (Ok _) = False
+    coFlag (Replace _ _) = True
+    coSig (a, b) = (coFlag a, coFlag b)
+    coConn' (a, b) (a', b') = (a && a') || (b && b')
+    coConn = coConn' `on` coSig
+    coGroup [] = []
+    coGroup (x:xs) =
+      case coGroup xs of
+        xs'@(ys@(y:_):yss)
+          | coConn x y -> (x : ys) : yss
+        xs' -> [x] : xs'
+    connect = map confl . coGroup
+    toCon (Ok m, Ok _) = Ok m
+    toCon (Ok o, Replace _ y) = Conflict o o y
+    toCon (Replace o m, Ok _) = Conflict m o o
+    toCon (Replace o m, Replace _ y) = Conflict m o y
+    confl = foldr cappend (Ok []) . map toCon
+    cappend (Ok x) (Ok o) = Ok (x ++ o)
+    cappend (Ok x) (Conflict m o y) = error "align consistency check fail" -- Conflict (x++m) (x++o) (x++y)
+    cappend (Conflict m o y) (Ok x) = Conflict (m ++ x) (o ++ x) (y ++ x)
+    cappend (Conflict m o y) (Conflict m' o' y') =
+      Conflict (m ++ m') (o ++ o') (y ++ y')
 
 regroup :: [Merged] -> [Merged]
 regroup [] = []
@@ -169,54 +227,7 @@ regroup (x@(Ok a):xs) =
   case regroup xs of
     (Ok b:xs') -> Ok (a ++ b) : xs'
     xs' -> x : xs'
-regroup (Conflict [] [] []:xs) = regroup xs
-regroup (x@(Conflict m1 o1 y1):xs) =
-  case regroup xs of
-    (Conflict m2 o2 y2:xs') -> Conflict (m1 ++ m2) (o1 ++ o2) (y1 ++ y2) : xs'
-    xs' -> x : xs'
 regroup (x:xs) = x : regroup xs
-
-respace :: Config -> [Tok] -> [Tok] -> [Tok] -> [Merged] -> [Merged]
-respace Config {..} m o y cs = go m o y cs
-  where
-    decide m o y =
-      case cfgSpaces of
-        SpacesConflict -> Conflict m o y
-        SpacesMy -> Ok m
-        SpacesOld -> Ok o
-        SpacesYour -> Ok y
-    go m o y []
-      | all (all Toks.space) [m, o, y] = [decide m o y]
-      | otherwise = error "respace trailed"
-    go m o y (Ok a:cs) =
-      let [(sm, rm), (so, ro), (sy, ry)] = map (re True a) [m, o, y]
-       in decide sm so sy : go rm ro ry cs
-    go m o y (Conflict m' o' y':cs) =
-      let [(sm, rm), (so, ro), (sy, ry)] =
-            zipWith (re False) [m', o', y'] [m, o, y]
-       in Conflict sm so sy : go rm ro ry cs
-    re False [] sp = ([], sp)
-    re True [] sp = break (not . Toks.space) sp
-    re greedy (t:ts) sp =
-      let (sp0, sp') = break (not . Toks.space) sp
-       in case sp' of
-            (s:ss)
-              | s == t ->
-                let (sp1, rest) = re greedy ts ss
-                 in (sp0 ++ s : sp1, rest)
-            [] -> error "respace misaligned"
-
-expand :: Int -> [Merged] -> [Merged]
-expand n = go
-  where
-    go [] = []
-    go (x@(Conflict m1 o1 y1):xs) =
-      case go xs of
-        (Ok a:Conflict m2 o2 y2:xs')
-          | length a <= n ->
-            Conflict (m1 ++ a ++ m2) (o1 ++ a ++ o2) (y1 ++ a ++ y2) : xs'
-        xs' -> x : xs'
-    go (x:xs) = x : go xs
 
 zeal Config {..} (Conflict m o y) =
   before' ++ (Conflict (reverse m'') o (reverse y'') : after')
@@ -242,8 +253,34 @@ zeal Config {..} (Conflict m o y) =
     pops ms ys = ((ms, ys), [])
 zeal _ x = [x]
 
+resolveSpace Config {..} c@(Conflict m o y)
+  | not (all Toks.space $ concat [m, o, y])
+      || cfgSpaces `elem` [SpacesNormal, SpacesConflict] = c
+  | m == o && o == y = Ok o
+  | otherwise =
+    case cfgSpaces of
+      SpacesMy -> Ok m
+      SpacesOld -> Ok o
+      SpacesYour -> Ok y
+      _ -> error $ "spaces resolution error " ++ show cfgSpaces
+resolveSpace _ x = x
+
+expand :: Int -> [Merged] -> [Merged]
+expand n = go
+  where
+    go [] = []
+    go (x@(Conflict m1 o1 y1):xs) =
+      case go xs of
+        (Conflict m2 o2 y2:xs') ->
+          Conflict (m1 ++ m2) (o1 ++ o2) (y1 ++ y2) : xs'
+        (Ok a:Conflict m2 o2 y2:xs')
+          | length a <= n ->
+            Conflict (m1 ++ a ++ m2) (o1 ++ a ++ o2) (y1 ++ a ++ y2) : xs'
+        xs' -> x : xs'
+    go (x:xs) = x : go xs
+
 resolve cfg@Config {..} c@(Conflict m o y)
-  | all Toks.space (concat [m, o, y]) && cfgSpaces /= SpacesNormal =
+  | cfgSpaces /= SpacesNormal && all Toks.space (concat [m, o, y]) =
     resolveSpace cfg c
   | m == o && o == y = Ok o
   | m == o && cfgResolveSeparate = Ok y
@@ -251,39 +288,15 @@ resolve cfg@Config {..} c@(Conflict m o y)
   | m == y && cfgResolveOverlaps = Ok m
 resolve _ x = x
 
--- TODO: there might be a bit of interplay between the spaces handling and
--- separate/overlapped conflict resolution -- e.g., what if someone wants to
--- merge overlapping edits in text but separate edits in spaces? At this point
--- that might be ignorable.
---
--- Also, conflicts that are made out of an ignorable space change and a
--- mergeable non-space change now cause conflicts because the spaces are no
--- longer truly separable/alignable here. Ideally some part of the space
--- merging should be done at alignment (e.g., fake all spaces to cause them to
--- align well). Also it might be necessary to group space-tokens together
--- (newline and indent are now 2 space tokens, which won't ever merge with a
--- single space)
-resolveSpace Config {..} c@(Conflict m o y)
-  | m == o && o == y = Ok o
-  | otherwise =
-    case cfgSpaces of
-      SpacesConflict -> c
-      SpacesMy -> Ok m
-      SpacesOld -> Ok o
-      SpacesYour -> Ok y
-      _ -> error "spaces resolution failed"
-
-resolveSpaces _ x = x
-
--- TODO mix in the despace & respace
 merge cfg@Config {..} ms ys =
   regroup
     . map (resolve cfg)
-    . regroup
-    . bool id (concatMap $ zeal cfg) cfgZealous
     . expand cfgContext
     . regroup
-    $ align ms ys
+    . map (resolveSpace cfg)
+    . bool id (concatMap $ zeal cfg) cfgZealous
+    . regroup
+    $ align (chunks ms) (chunks ys)
 
 {-
  - front-end
