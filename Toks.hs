@@ -15,11 +15,11 @@ unescape :: String -> String
 unescape [] = []
 unescape ('\\':'\\':xs) = '\\' : unescape xs
 unescape ('\\':'n':xs) = '\n' : unescape xs
-unescape ('\\':_) = error "bad escape?"
+unescape ('\\':_) = error "bad escape on input"
 unescape (x:xs) = x : unescape xs
 
 markSpace :: String -> Tok
-markSpace [] = error "wat"
+markSpace [] = error "empty token"
 markSpace s@(c:_)
   | isSpace c = '.' : s
   | otherwise = '|' : s
@@ -27,7 +27,7 @@ markSpace s@(c:_)
 unmarkSpace :: Tok -> String
 unmarkSpace ('.':s) = s
 unmarkSpace ('|':s) = s
-unmarkSpace x = error "unwat"
+unmarkSpace _ = error "bad space marking on input"
 
 space :: Tok -> Bool
 space ('.':_) = True

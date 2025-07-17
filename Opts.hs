@@ -16,6 +16,7 @@ data Tokenizer
   | TokenizeCharCategorySimple
   deriving (Show)
 
+tokenizer :: Parser Tokenizer
 tokenizer =
   asum
     [ TokenizeFilter
@@ -44,6 +45,7 @@ data ConflictMask = ConflictMask
   , cmResolveSeparate :: Bool
   } deriving (Show)
 
+conflictMask :: String -> String -> Parser ConflictMask
 conflictMask label objs = do
   cmResolveOverlaps' <-
     fmap not . switch
@@ -70,6 +72,7 @@ data Resolution
   | ResolveYour
   deriving (Show, Eq)
 
+resolutionMode :: String -> Either String Resolution
 resolutionMode x
   | x `isPrefixOf` "keep" = Right ResolveKeep
   | x `isPrefixOf` "my" = Right ResolveMy
@@ -86,6 +89,7 @@ data SpaceResolution
   | SpaceSpecial Resolution
   deriving (Show, Eq)
 
+spaceMode :: String -> Either String SpaceResolution
 spaceMode x
   | x `isPrefixOf` "normal" = Right SpaceNormal
   | Right y <- resolutionMode x = Right (SpaceSpecial y)
@@ -110,6 +114,7 @@ data Config = Config
   , cfgLabelEnd :: String
   } deriving (Show)
 
+config :: Parser Config
 config = do
   cfgTokenizer <- tokenizer
   cfgZealous <-
@@ -212,6 +217,7 @@ data Command
       }
   deriving (Show)
 
+cmdDiff3 :: Parser Command
 cmdDiff3 = do
   d3my <- strArgument $ metavar "MYFILE" <> help "Version with local edits"
   d3old <- strArgument $ metavar "OLDFILE" <> help "Original file version"
@@ -219,13 +225,15 @@ cmdDiff3 = do
     strArgument $ metavar "YOURFILE" <> help "Version with other people's edits"
   pure CmdDiff3 {..}
 
+cmdGitMerge :: Parser Command
 cmdGitMerge = do
   gmFiles <-
     asum
       [ fmap Just . some
           $ strArgument
           $ metavar "UNMERGED"
-              <> help "Unmerged file tracked by git (can be specified repeatedly)"
+              <> help
+                   "Unmerged file tracked by git (can be specified repeatedly)"
       , flag'
           Nothing
           (long "unmerged"
@@ -246,6 +254,7 @@ cmdGitMerge = do
 
 -- TODO have some option to output the (partially merged) my/old/your files so
 -- that folks can continue with external program or so (such as meld)
+cmd :: Parser Command
 cmd =
   hsubparser
     $ mconcat

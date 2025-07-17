@@ -22,8 +22,9 @@ executable werge
   main-is:          Main.hs
   other-modules:
     Opts
-    Toks
     Paths_werge
+    Progs
+    Toks
 
   autogen-modules:  Paths_werge
   build-depends:

@@ -8,124 +8,16 @@ import Data.Bool
 import Data.Foldable
 import Data.Function
 import Data.List
-import Data.Maybe
 import Data.Traversable
-import Opts
-import System.Environment
 import System.Exit
 import System.FilePath
 import System.IO
 import System.IO.Temp
-import System.Process
 
+import Opts
+import Progs
 import qualified Toks
 import Toks (Tok)
-
-import Debug.Trace
-
-{-
- - interface to other programs
- -}
-diffProg = fromMaybe "diff" <$> lookupEnv "WERGE_DIFF"
-
-gitProg = fromMaybe "git" <$> lookupEnv "WERGE_GIT"
-
-bracketFile path mode = bracket (openFile path mode) hClose
-
-rundiff f1 f2 out = do
-  diff <- diffProg
-  st <-
-    bracketFile out WriteMode $ \oh ->
-      withCreateProcess
-        (proc
-           diff
-           [ "--text"
-           , "--new-line-format=+%L"
-           , "--old-line-format=-%L"
-           , "--unchanged-line-format= %L"
-           , f1
-           , f2
-           ])
-          {std_in = NoStream, std_out = UseHandle oh} $ \_ _ _ -> waitForProcess
-  when (st == ExitFailure 2) $ error "diff failed"
-  unless (st `elem` [ExitSuccess, ExitFailure 1])
-    $ error "diff failed for unknown reason (is GNU diffutils installed?)"
-
-gitRepoRelRoot = do
-  git <- gitProg
-  (path, st) <-
-    withCreateProcess
-      (proc git ["rev-parse", "--show-cdup"])
-        {std_in = NoStream, std_out = CreatePipe} $ \_ (Just oh) _ p ->
-      (,) <$> hGetContents' oh <*> waitForProcess p
-  unless (st == ExitSuccess) $ error "git failed"
-  let [p] = lines path
-  pure p
-
-gitUnmerged = do
-  git <- gitProg
-  (paths, st) <-
-    withCreateProcess
-      (proc git ["status", "--porcelain=v1"])
-        {std_in = NoStream, std_out = CreatePipe} $ \_ (Just oh) _ p ->
-      (,)
-        <$> (map (drop 3) . filter ("UU " `isPrefixOf`) . lines
-               <$> hGetContents' oh)
-        <*> waitForProcess p
-  unless (st == ExitSuccess) $ error "git failed"
-  pure paths
-
-gitCheckoutMOY cfg u my old your = do
-  git <- gitProg
-  (paths, st) <-
-    withCreateProcess
-      (proc git ["ls-files", "--unmerged", "--", u])
-        {std_in = NoStream, std_out = CreatePipe} $ \_ (Just oh) _ p ->
-      (,)
-        <$> (sortOn snd
-               . map ((\[a, b] -> (a, b)) . take 2 . drop 1 . words)
-               . lines
-               <$> hGetContents' oh)
-        <*> waitForProcess p
-  unless (st == ExitSuccess) $ error "git failed"
-  let co (hash, _) path = do
-        st <-
-          withCreateProcess
-            (proc "git" ["cat-file", "blob", hash])
-              {std_in = NoStream, std_out = CreatePipe} $ \_ (Just ho) _ p -> do
-            hSplitToFile cfg ho path
-            waitForProcess p
-        unless (st == ExitSuccess) . error
-          $ "failed checking out " ++ u ++ " from blob " ++ hash
-  case paths of
-    [(_, "1"), (_, "2"), (_, "3")] ->
-      zipWithM co paths [old, my, your] >> pure ()
-    _ -> error $ "bad data from ls-files for unmerged " ++ u
-
-gitAdd path = do
-  git <- gitProg
-  st <- rawSystem git ["add", "--", path]
-  unless (st == ExitSuccess) $ error "git-add failed"
-
-{-
- - configurable splitting
- -
- - TODO this should probably enforce joinSpaces?
- - or have joinSpaces as configurable? (probably best, default true)
- -}
-hSplitToFile cfg h path =
-  case cfgTokenizer cfg of
-    TokenizeCharCategory -> internal Toks.splitCategory
-    TokenizeCharCategorySimple -> internal Toks.splitSimple
-    TokenizeFilter cmd -> do
-      st <-
-        bracketFile path WriteMode $ \ho ->
-          withCreateProcess
-            (shell cmd) {std_in = UseHandle h, std_out = UseHandle ho} $ \_ _ _ ->
-            waitForProcess
-      unless (st == ExitSuccess) $ error "tokenize filter failed"
-  where
-    internal s = hGetContents h >>= writeFile path . Toks.toFile . s
 
 {-
  - merge algorithms
@@ -142,7 +34,7 @@ pdiff path = map go . lines <$> readFile path
     go ('-':s) = (Del, s)
     go (' ':s) = (Keep, s)
     go ('+':s) = (Add, s)
-    go [] = error "unexpected output from diff"
+    go _ = error "unexpected output from diff"
 
 data Merged
   = Ok [String]
@@ -150,9 +42,11 @@ data Merged
   | Conflict [String] [String] [String]
   deriving (Show)
 
+isKeepTok :: (Op, String) -> Bool
 isKeepTok (Keep, _) = True
 isKeepTok _ = False
 
+isDelTok :: (Op, String) -> Bool
 isDelTok (Del, _) = True
 isDelTok _ = False
 
@@ -170,6 +64,7 @@ chunks xs =
   let (reps, ys) = break isKeepTok xs
    in uncurry (Replace `on` map snd) (partition isDelTok reps) : chunks ys
 
+align1 :: Eq a => [a] -> [a] -> ([a], [a], [a])
 align1 as [] = ([], as, [])
 align1 [] bs = ([], [], bs)
 align1 (a:as) (b:bs)
@@ -178,7 +73,7 @@ align1 (a:as) (b:bs)
 align1 _ _ = error "chunks do not align"
 
 align :: [Merged] -> [Merged] -> [Merged]
-align m y = connect $ slice m y
+align m0 y0 = connect $ slice m0 y0
   where
     erase x = Replace x []
     nemap _ [] = []
@@ -204,13 +99,14 @@ align m y = connect $ slice m y
     slice _ _ = error "unacceptable chunks"
     coFlag (Ok _) = False
     coFlag (Replace _ _) = True
+    coFlag _ = error "flagging unacceptable chunks"
     coSig (a, b) = (coFlag a, coFlag b)
     coConn' (a, b) (a', b') = (a && a') || (b && b')
     coConn = coConn' `on` coSig
     coGroup [] = []
     coGroup (x:xs) =
       case coGroup xs of
-        xs'@(ys@(y:_):yss)
+        (ys@(y:_):yss)
           | coConn x y -> (x : ys) : yss
         xs' -> [x] : xs'
     connect = map confl . coGroup
@@ -218,12 +114,14 @@ align m y = connect $ slice m y
     toCon (Ok o, Replace _ y) = Conflict o o y
     toCon (Replace o m, Ok _) = Conflict m o o
     toCon (Replace o m, Replace _ y) = Conflict m o y
-    confl = foldr cappend (Ok []) . map toCon
-    cappend (Ok x) (Ok o) = Ok (x ++ o)
-    cappend (Ok x) (Conflict m o y) = error "align consistency check fail" -- Conflict (x++m) (x++o) (x++y)
-    cappend (Conflict m o y) (Ok x) = Conflict (m ++ x) (o ++ x) (y ++ x)
-    cappend (Conflict m o y) (Conflict m' o' y') =
+    toCon _ = error "converting unacceptable chunks"
+    confl = foldr coAppend (Ok []) . map toCon
+    coAppend (Ok x) (Ok o) = Ok (x ++ o)
+    coAppend (Ok _) (Conflict _ _ _) = error "align consistency check fail" -- Conflict (x++m) (x++o) (x++y)
+    coAppend (Conflict m o y) (Ok x) = Conflict (m ++ x) (o ++ x) (y ++ x)
+    coAppend (Conflict m o y) (Conflict m' o' y') =
       Conflict (m ++ m') (o ++ o') (y ++ y')
+    coAppend _ _ = error "appending unacceptable chunks"
 
 regroup :: [Merged] -> [Merged]
 regroup [] = []
@@ -234,10 +132,11 @@ regroup (x@(Ok a):xs) =
     xs' -> x : xs'
 regroup (x:xs) = x : regroup xs
 
-zeal Config {..} (Conflict m o y) =
-  before' ++ (Conflict (reverse m'') o (reverse y'') : after')
+zeal :: Config -> Merged -> [Merged]
+zeal Config {..} (Conflict m0 o0 y0) =
+  before' ++ (Conflict (reverse m'') o0 (reverse y'') : after')
   where
-    ((m', y'), before) = pops m y
+    ((m', y'), before) = pops m0 y0
     ((m'', y''), rafter) = pops (reverse m') (reverse y')
     before' =
       case before of
@@ -258,6 +157,7 @@ zeal Config {..} (Conflict m o y) =
     pops ms ys = ((ms, ys), [])
 zeal _ x = [x]
 
+resolveSpace :: Config -> Merged -> Merged
 resolveSpace Config {..} c@(Conflict m o y)
   | not (all Toks.space $ concat [m, o, y]) = c
   | m == o && o == y = Ok o
@@ -290,6 +190,7 @@ expand n = go
         xs' -> x : xs'
     go (x:xs) = x : go xs
 
+resolve :: Config -> Merged -> Merged
 resolve cfg@Config {..} c@(Conflict m o y)
   | cfgSpaceResolution /= SpaceNormal
   , all Toks.space (concat [m, o, y]) = resolveSpace cfg c
@@ -305,6 +206,7 @@ resolve cfg@Config {..} c@(Conflict m o y)
       ResolveKeep -> c
 resolve _ x = x
 
+merge :: Config -> [(Op, String)] -> [(Op, String)] -> [Merged]
 merge cfg@Config {..} ms ys =
   regroup
     . map (resolve cfg)
@@ -325,7 +227,7 @@ format Config {..} h = go False
     go c (Ok x:xs) = do
       hPutStr h (Toks.glue x)
       go c xs
-    go c (Conflict m o y:xs) = do
+    go _ (Conflict m o y:xs) = do
       hPutStr h
         $ mconcat
             [ cfgLabelStart
@@ -337,7 +239,9 @@ format Config {..} h = go False
             , cfgLabelEnd
             ]
       go True xs
+    go _ _ = error "bad format (replace)"
 
+runCmd :: Command -> Config -> IO ()
 runCmd CmdDiff3 {..} cfg =
   withSystemTempDirectory "werge-diff3" $ \workdir -> do
     let [fMy, fOld, fYour, fdMy, fdYour] =
@@ -378,9 +282,7 @@ runCmd CmdGitMerge {..} cfg = do
 main :: IO ()
 main = catch go bad
   where
-    go = do
-      (cfg, cmd) <- parseOpts
-      runCmd cmd cfg
+    go = parseOpts >>= uncurry (flip runCmd)
     bad e = do
       hPutStrLn stderr $ "fatal: " ++ displayException (e :: IOException)
       exitWith (ExitFailure 2)
