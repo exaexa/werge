@@ -147,7 +147,7 @@ config = do
               <> metavar ("(normal|keep|my|old|your)")
               <> value SpaceNormal
               <> help
-                   "Resolve conflicts in space-only tokens separately, and either keep unresolved conflicts, or resolve in favor of a given version; `normal' resolves the spaces together with other tokens, ignoring choices in --resolve-space-* (default: normal)"
+                   "Resolve conflicts in space-only tokens separately, and either keep unresolved conflicts, or resolve in favor of a given version; `normal' resolves the spaces together with other tokens, ignoring choices in --conflict-space-* (default: normal)"
       ]
   cfgSpaceConflicts <- conflictMask "conflict-space" "space-only tokens"
   cfgContext <-
