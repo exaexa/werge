@@ -104,6 +104,8 @@ below (note the invisible space on the lines with dots):
 .\n
 ```
 
+### Custom tokenizers
+
 Users may supply any tokenizer via option `-F`. The script below produces
 line-size tokens for demonstration (in turn, `werge` will do the usual line
 merges), and can be used e.g. via `-F ./tokenize.py`:
@@ -118,6 +120,13 @@ for l in sys.stdin.readlines():
     else:
         print('/'+l.replace('\\','\\\\'))
 ```
+
+### History
+
+I previously made an attempt to solve this in `adiff` software, which failed
+because the approach was too complex. Before that, the issue was tackled by
+Arek Antoniewicz on MFF CUNI, who used regex-edged DFAs (REDFAs) to construct
+user-specifiable tokenizers in a pretty cool way.
 
 ## Installation
 
