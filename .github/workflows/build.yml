@@ -1,0 +1,24 @@
+
+name: build
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: haskell-actions/setup@v2
+        with:
+          ghc-version: '9.4'
+      - run: |
+          cabal build
+          xz -9 < `cabal exec which werge` > werge-${{ github.ref_name }}-`uname -m`.xz
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: werge-*.xz
