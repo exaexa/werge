@@ -274,6 +274,8 @@ Available options:
 
 #### Converting between files and tokens
 
+Both commands work as plain stdin-to-stdout filters:
+
 ```
 Usage: werge break 
 
