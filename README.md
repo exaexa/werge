@@ -1,19 +1,25 @@
 
 # werge (merge weird stuff)
 
-This is a partial work-alike of `diff3` and `git merge` and other merge-y tools
-that is capable of
+This is a partial work-alike of `diff3`, `patch`, `git merge` and other merge-y
+tools that is capable of:
 
-- merging token-size changes instead of line-size ones
-- largely ignoring changes in blank characters
+- merging token-size changes (words, identifiers, sentences) instead of
+  line-size ones
+- merging changes in blank characters separately or ignoring them altogether
 
 These properties are great for several use-cases:
 
-- merging free-flowing text changes (such as in TeX) irrespective of line breaks
-  etc,
-- merging of change sets that use different code formatters
+- combining changes in free-flowing text (such as in TeX or Markdown),
+  irrespectively of changed line breaks, paragraph breaking and justification,
+  etc.
+- merging of code formatted with different code formatters
 - minimizing the conflict size of tiny changes to a few characters, making them
   easier to resolve
+
+Separate `diff`&`patch` functionality is provided too for sending
+token-granularity patches. (The patches are similar to what `git diff
+--word-diff` produces, but can be applied to files.)
 
 ## Demo
 
@@ -85,21 +91,22 @@ type. This choice trades off some merge quality for (a lot of) complexity.
 
 Tokenizers are simple, implementable as linear scanners that print separate
 tokens on individual lines that are prefixed with a space mark (`.` for space
-and `|` for non-space), and also escape newlines and backslashes. A default
+and `/` for non-space), and also escape newlines and backslashes. A default
 tokenization of string "hello \ world" with a new line at the end is listed
 below (note the invisible space on the lines with dots):
 
 ```
-|hello
+/hello
 . 
-|\\
+/\\
 . 
-|world
+/world
 .\n
 ```
 
-Users may supply any tokenizer via option `-F`, e.g. this script makes
-line-size tokens (reproducing the usual line merges):
+Users may supply any tokenizer via option `-F`. The script below produces
+line-size tokens for demonstration (in turn, `werge` will do the usual line
+merges), and can be used e.g. via `-F ./tokenize.py`:
 
 ```py
 #!/usr/bin/env python3
@@ -107,9 +114,9 @@ import sys
 for l in sys.stdin.readlines():
     if len(l)==0: continue
     if l[-1]=='\n':
-        print('|'+l[:-1].replace('\\','\\\\')+'\\n')
+        print('/'+l[:-1].replace('\\','\\\\')+'\\n')
     else:
-        print('|'+l.replace('\\','\\\\'))
+        print('/'+l.replace('\\','\\\\'))
 ```
 
 ## Installation
