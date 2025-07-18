@@ -254,7 +254,7 @@ format Config {..} h = go False
             [cfgLabelStart, Toks.glue o, cfgLabelDiff, Toks.glue n, cfgLabelEnd]
       go True xs
 
-runCmd :: Command -> Config -> IO ()
+runCmd :: Cmd -> Config -> IO ()
 runCmd CmdDiff3 {..} cfg =
   withSystemTempDirectory "werge-diff3" $ \workdir -> do
     let [fMy, fOld, fYour, fdMy, fdYour] =

@@ -30,7 +30,7 @@ executable werge
   build-depends:
     , base                  >=4.15 && <5
     , filepath
-    , optparse-applicative
+    , opt-env-conf
     , process
     , temporary
 

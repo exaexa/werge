@@ -6,8 +6,7 @@ module Opts where
 import Data.Bool
 import Data.List
 import Data.Maybe
-import Data.Version (showVersion)
-import Options.Applicative
+import OptEnvConf
 import Paths_werge (version)
 
 data Tokenizer
@@ -18,27 +17,29 @@ data Tokenizer
 
 tokenizer :: Parser Tokenizer
 tokenizer =
-  asum
-    [ TokenizeFilter
-        <$> strOption
-              (long "tok-filter"
-                 <> short 'F'
-                 <> metavar "FILTER"
-                 <> help "External program to separate the text to tokens")
-    , flag'
-        TokenizeCharCategorySimple
-        (long "simple-tokens"
-           <> short 'i'
-           <> help
-                "Use wider character class to separate the tokens (results in larger tokens and ignores case)")
-    , flag'
-        TokenizeCharCategory
-        (long "full-tokens"
-           <> short 'I'
-           <> help
-                "Separate characters by all known character classes (default)")
-    , pure TokenizeCharCategory
-    ]
+  withShownDefault (const "full tokens") TokenizeCharCategory
+    $ choice
+        [ TokenizeFilter
+            <$> strOption
+                  [ long "tok-filter"
+                  , short 'F'
+                  , metavar "FILTER"
+                  , help "External program to separate the text to tokens"
+                  ]
+        , setting
+            [ switch TokenizeCharCategorySimple
+            , long "simple-tokens"
+            , short 'i'
+            , help
+                "Use wider character class to separate the tokens (results in larger tokens and ignores case)"
+            ]
+        , setting
+            [ switch TokenizeCharCategory
+            , long "full-tokens"
+            , short 'I'
+            , help "Separate characters by all known character classes"
+            ]
+        ]
 
 data ConflictMask = ConflictMask
   { cmResolveOverlaps :: Bool
@@ -48,17 +49,27 @@ data ConflictMask = ConflictMask
 conflictMask :: String -> String -> Parser ConflictMask
 conflictMask label objs = do
   cmResolveOverlaps' <-
-    fmap not . switch
-      $ long (label ++ "-overlaps")
-          <> help ("Never resolve overlapping changes in " ++ objs)
+    not
+      <$> setting
+            [ switch True
+            , long (label ++ "-overlaps")
+            , help ("Never resolve overlapping changes in " ++ objs)
+            ]
   cmResolveSeparate' <-
-    fmap not . switch
-      $ long (label ++ "-separate")
-          <> help
-               ("Never resolve separate (non-overlapping) changes in " ++ objs)
+    not
+      <$> setting
+            [ switch True
+            , long (label ++ "-separate")
+            , help
+                ("Never resolve separate (non-overlapping) changes in " ++ objs)
+            ]
   cmAll <-
-    fmap not . switch
-      $ long (label ++ "-all") <> help ("Never resolve any changes in " ++ objs)
+    not
+      <$> setting
+            [ switch True
+            , long (label ++ "-all")
+            , help ("Never resolve any changes in " ++ objs)
+            ]
   pure
     ConflictMask
       { cmResolveSeparate = cmResolveSeparate' && cmAll
@@ -119,85 +130,124 @@ config :: Parser Config
 config = do
   cfgTokenizer <- tokenizer
   cfgZealous <-
-    asum
-      [ flag' False $ long "no-zeal" <> help "avoid zealous mode (default)"
-      , flag' True
-          $ long "zeal"
-              <> short 'z'
-              <> help
-                   "Try to zealously minify conflicts, potentially resolving them"
-      , pure False
-      ]
+    withShownDefault (const "not zealous") False
+      $ choice
+          [ setting [switch False, long "no-zeal", help "avoid zealous mode"]
+          , setting
+              [ switch True
+              , long "zeal"
+              , short 'z'
+              , help
+                  "Try to zealously minify conflicts, potentially resolving them"
+              ]
+          ]
   cfgSpaceRetain <-
-    option (eitherReader resolutionMode)
-      $ long "space"
-          <> short 'S'
-          <> metavar "(keep|my|old|your)"
-          <> help
-               "Retain spacing from a selected version, or keep all space changes for merging (default: keep)"
-          <> value ResolveKeep
+    setting
+      [ option
+      , reader (eitherReader resolutionMode)
+      , long "space"
+      , short 'S'
+      , metavar "(keep|my|old|your)"
+      , help
+          "Retain spacing from a selected version, or keep all space changes for merging (default: keep)"
+      , value ResolveKeep
+      ]
   cfgSpaceResolution <-
-    asum
-      [ flag' (SpaceSpecial ResolveKeep)
-          $ short 's'
-              <> help
-                   "Shortcut for `--resolve-space keep' (this separates space-only conflicts, enabling better automated resolution)"
-      , option (eitherReader spaceMode)
-          $ long "resolve-space"
-              <> metavar ("(normal|keep|my|old|your)")
-              <> value SpaceNormal
-              <> help
-                   "Resolve conflicts in space-only tokens separately, and either keep unresolved conflicts, or resolve in favor of a given version; `normal' resolves the spaces together with other tokens, ignoring choices in --resolve-space-* (default: normal)"
+    choice
+      [ setting
+          [ switch (SpaceSpecial ResolveKeep)
+          , short 's'
+          , help
+              "Shortcut for `--resolve-space keep' (this separates space-only conflicts, enabling better automated resolution)"
+          ]
+      , setting
+          [ option
+          , reader (eitherReader spaceMode)
+          , long "resolve-space"
+          , metavar ("(normal|keep|my|old|your)")
+          , value SpaceNormal
+          , help
+              "Resolve conflicts in space-only tokens separately, and either keep unresolved conflicts, or resolve in favor of a given version; `normal' resolves the spaces together with other tokens, ignoring choices in --resolve-space-* (default: normal)"
+          ]
       ]
   cfgSpaceConflicts <- conflictMask "conflict-space" "space-only tokens"
   cfgContext <-
-    option auto
-      $ long "expand-context"
-          <> short 'C'
-          <> metavar "N"
-          <> value 2
-          <> showDefault
-          <> help
-               "Consider changes that are at less than N tokens apart to be a single change; 0 turns off conflict expansion, 1 may cause bad resolutions of near conflicting edits"
+    setting
+      [ option
+      , reader auto
+      , long "expand-context"
+      , short 'C'
+      , metavar "N"
+      , value 2
+      , help
+          "Consider changes that are at less than N tokens apart to be a single change; 0 turns off conflict expansion, 1 may cause bad resolutions of near conflicting edits"
+      ]
+          --, showDefault
   cfgResolution <-
-    option (eitherReader resolutionMode)
-      $ long "resolve"
-          <> metavar "(keep|my|old|your)"
-          <> value ResolveKeep
-          <> help
-               "Resolve general conflicts in favor of a given version, or keep the conflicts (default: keep)"
+    setting
+      [ option
+      , reader (eitherReader resolutionMode)
+      , long "resolve"
+      , metavar "(keep|my|old|your)"
+      , value ResolveKeep
+      , help
+          "Resolve general conflicts in favor of a given version, or keep the conflicts (default: keep)"
+      ]
   cfgConflicts <- conflictMask "conflict" "general tokens"
   color <-
-    flag False True
-      $ long "color"
-          <> short 'G'
-          <> help
-               "Use shorter, gaily colored output markers by default (requires ANSI color support; good for terminals or `less -R')"
+    setting
+      [ switch True
+      , value False
+      , long "color"
+      , short 'G'
+      , help
+          "Use shorter, gaily colored output markers by default (requires ANSI color support; good for terminals or `less -R')"
+      ]
   labelStart <-
-    optional . strOption
-      $ long "label-start"
-          <> metavar "\"<<<<<\""
-          <> help "Label for beginning of the conflict"
+    optional
+      $ setting
+          [ option
+          , reader str
+          , long "label-start"
+          , metavar "\"<<<<<\""
+          , help "Label for beginning of the conflict"
+          ]
   labelMyOld <-
-    optional . strOption
-      $ long "label-mo"
-          <> metavar "\"|||||\""
-          <> help "Separator of local edits and original"
+    optional
+      $ setting
+          [ option
+          , reader str
+          , long "label-mo"
+          , metavar "\"|||||\""
+          , help "Separator of local edits and original"
+          ]
   labelDiff <-
-    optional . strOption
-      $ long "label-diff"
-          <> metavar "\"|||||\""
-          <> help "Separator for old and new version"
+    optional
+      $ setting
+          [ option
+          , reader str
+          , long "label-diff"
+          , metavar "\"|||||\""
+          , help "Separator for old and new version"
+          ]
   labelOldYour <-
-    optional . strOption
-      $ long "label-oy"
-          <> metavar "\"=====\""
-          <> help "Separator of original and other people's edits"
+    optional
+      $ setting
+          [ option
+          , reader str
+          , long "label-oy"
+          , metavar "\"=====\""
+          , help "Separator of original and other people's edits"
+          ]
   labelEnd <-
-    optional . strOption
-      $ long "label-end"
-          <> metavar "\">>>>>\""
-          <> help "Label for end of the conflict"
+    optional
+      $ setting
+          [ option
+          , reader str
+          , long "label-end"
+          , metavar "\">>>>>\""
+          , help "Label for end of the conflict"
+          ]
   pure
     Config
       { cfgLabelStart =
@@ -213,7 +263,7 @@ config = do
       , ..
       }
 
-data Command
+data Cmd
   = CmdDiff3
       { d3my :: FilePath
       , d3old :: FilePath
@@ -224,77 +274,73 @@ data Command
       , gmDoAdd :: Bool
       }
   | CmdDiff
-    { diffOld :: FilePath
-    , diffNew :: FilePath
-    }
+      { diffOld :: FilePath
+      , diffNew :: FilePath
+      }
   deriving (Show)
 
-cmdDiff3 :: Parser Command
+cmdDiff3 :: Parser Cmd
 cmdDiff3 = do
-  d3my <- strArgument $ metavar "MYFILE" <> help "Version with local edits"
-  d3old <- strArgument $ metavar "OLDFILE" <> help "Original file version"
+  d3my <- setting [argument, reader str, metavar "MYFILE", help "Version with local edits"]
+  d3old <- setting [argument, reader str, metavar "OLDFILE", help "Original file version"]
   d3your <-
-    strArgument $ metavar "YOURFILE" <> help "Version with other people's edits"
+    setting
+      [argument, reader str, metavar "YOURFILE", help "Version with other people's edits"]
   pure CmdDiff3 {..}
 
-cmdGitMerge :: Parser Command
+cmdGitMerge :: Parser Cmd
 cmdGitMerge = do
   gmFiles <-
-    asum
+    choice
       [ fmap Just . some
-          $ strArgument
-          $ metavar "UNMERGED"
-              <> help
-                   "Unmerged file tracked by git (can be specified repeatedly)"
-      , flag'
-          Nothing
-          (long "unmerged"
-             <> short 'u'
-             <> help "Process all files marked as unmerged by git")
+          $ setting
+              [ argument
+              , reader str
+              , metavar "UNMERGED"
+              , help
+                  "Unmerged file tracked by git (can be specified repeatedly)"
+              ]
+      , setting
+          [ switch Nothing
+          , long "unmerged"
+          , short 'u'
+          , help "Process all files marked as unmerged by git"
+          ]
       ]
-  gmDoAdd <-
-    asum
-      [ flag'
-          True
-          (long "add"
-             <> short 'a'
-             <> help "Run `git add' for fully merged files")
-      , flag' False (long "no-add" <> help "Prevent running `git add'")
-      , pure False
-      ]
+  gmDoAdd <- -- TODO yesNoSwitch
+    withShownDefault (const "does not git-add") False
+      $ choice
+          [ setting
+              [ switch True
+              , long "add"
+              , short 'a'
+              , help "Run `git add' for fully merged files"
+              ]
+          , setting
+              [switch False, long "no-add", help "Prevent running `git add'"]
+          ]
   pure CmdGitMerge {..}
 
-cmdDiff :: Parser Command
+cmdDiff :: Parser Cmd
 cmdDiff = do
-  diffOld <- strArgument $ metavar "OLDFILE" <> help "Original file version"
-  diffNew <- strArgument $ metavar "NEWFILE" <> help "File version with changes"
+  diffOld <- setting [argument, reader str, metavar "OLDFILE", help "Original file version"]
+  diffNew <-
+    setting [argument, reader str, metavar "NEWFILE", help "File version with changes"]
   pure CmdDiff {..}
 
 -- TODO have some option to output the (partially merged) my/old/your files so
 -- that folks can continue with external program or so (such as meld)
-cmd :: Parser Command
+cmd :: Parser Cmd
 cmd =
-  hsubparser
-    $ mconcat
-        [ command "merge"
-            $ info cmdDiff3
-            $ progDesc "diff3-style merge of two changesets"
-        , command "git"
-            $ info cmdGitMerge
-            $ progDesc "Automerge unmerged files in git conflict"
-        , command "diff"
-            $ info cmdDiff
-            $ progDesc "Highlight differences between two files"
-        ]
+  commands
+    [ command "merge" "diff3-style merge of two changesets" cmdDiff3
+    , command "git" "Automerge unmerged files in git conflict" cmdGitMerge
+    , command "diff" "Highlight differences between two files" cmdDiff
+    ]
 
-parseOpts :: IO (Config, Command)
+parseOpts :: IO (Config, Cmd)
 parseOpts =
-  customExecParser (prefs helpShowGlobals)
-    $ info
-        (liftA2 (,) config cmd
-           <**> helper
-           <**> simpleVersioner (showVersion version))
-        (fullDesc
-           <> header
-                "werge -- blanks-friendly mergetool for tiny interdwindled changes"
-           <> footer "werge is a free software, use it accordingly.")
+  runParser
+    version
+    "werge -- blanks-friendly mergetool for tiny interdwindled changes"
+    $ liftA2 (,) config cmd
