@@ -144,16 +144,16 @@ automatically to `filename.werge-backup`.
 ```
 werge -- blanks-friendly mergetool for tiny interdwindled changes
 
-Usage: werge [(-F|--tok-filter FILTER) | (-i|--simple-tokens) |
-               (-I|--full-tokens)] [--no-zeal | (-z|--zeal)]
-             [-S|--space (keep|my|old|your)]
-             [-s | --resolve-space (normal|keep|my|old|your)]
-             [--conflict-space-overlaps] [--conflict-space-separate]
-             [--conflict-space-all] [-C|--expand-context N]
-             [--resolve (keep|my|old|your)] [--conflict-overlaps]
-             [--conflict-separate] [--conflict-all] [-G|--color]
-             [--label-start "<<<<<"] [--label-mo "|||||"] [--label-oy "====="]
-             [--label-end ">>>>>"] COMMAND
+Usage: werge [(-F|--tok-filter FILTER) | (-i|--simple-tokens) | 
+               (-I|--full-tokens)] [--no-zeal | (-z|--zeal)] 
+             [-S|--space (keep|my|old|your)] 
+             [-s | --resolve-space (normal|keep|my|old|your)] 
+             [--conflict-space-overlaps] [--conflict-space-separate] 
+             [--conflict-space-all] [-C|--expand-context N] 
+             [--resolve (keep|my|old|your)] [--conflict-overlaps] 
+             [--conflict-separate] [--conflict-all] [-G|--color] 
+             [--label-start "<<<<<"] [--label-mo "|||||"] [--label-diff "|||||"]
+             [--label-oy "====="] [--label-end ">>>>>"] COMMAND
 
 Available options:
   -F,--tok-filter FILTER   External program to separate the text to tokens
@@ -183,9 +183,10 @@ Available options:
                            Never resolve separate (non-overlapping) changes in
                            space-only tokens
   --conflict-space-all     Never resolve any changes in space-only tokens
-  -C,--expand-context N    Consider changes that are at most N tokens apart to
-                           be a single change. Zero may cause bad resolutions of
-                           near conflicting edits (default: 1)
+  -C,--expand-context N    Consider changes that are at less than N tokens apart
+                           to be a single change; 0 turns off conflict
+                           expansion, 1 may cause bad resolutions of near
+                           conflicting edits (default: 2)
   --resolve (keep|my|old|your)
                            Resolve general conflicts in favor of a given
                            version, or keep the conflicts (default: keep)
@@ -198,6 +199,7 @@ Available options:
                            `less -R')
   --label-start "<<<<<"    Label for beginning of the conflict
   --label-mo "|||||"       Separator of local edits and original
+  --label-diff "|||||"     Separator for old and new version
   --label-oy "====="       Separator of original and other people's edits
   --label-end ">>>>>"      Label for end of the conflict
   -h,--help                Show this help text
@@ -206,6 +208,10 @@ Available options:
 Available commands:
   merge                    diff3-style merge of two changesets
   git                      Automerge unmerged files in git conflict
+  diff                     Find differences between two files
+  patch                    Apply a patch from `diff' to file
+  break                    Break text to tokens
+  glue                     Glue tokens back to text
 
 werge is a free software, use it accordingly.
 ```
@@ -236,4 +242,46 @@ Available options:
   -a,--add                 Run `git add' for fully merged files
   --no-add                 Prevent running `git add'
   -h,--help                Show this help text
+```
+
+#### Finding differences
+```
+Usage: werge diff OLDFILE YOURFILE 
+                  [(-u|--unified) | (-U|--unified-size ARG) | (-m|--merge)]
+
+  Find differences between two files
+
+Available options:
+  OLDFILE                  Original file version
+  YOURFILE                 File version with changes
+  -u,--unified             Produce unified-diff-like output for `patch' with
+                           default context size (20)
+  -U,--unified-size ARG    Produce unified diff with this context size
+  -m,--merge               Highlight the differences as with `merge' (default)
+  -h,--help                Show this help text
+```
+
+#### Patching files in place
+```
+Usage: werge patch MYFILE
+
+  Apply a patch from `diff' to file
+
+Available options:
+  MYFILE                   File to be modified
+  -h,--help                Show this help text
+```
+
+#### Converting between files and tokens
+
+```
+Usage: werge break 
+
+  Break text to tokens
+```
+
+```
+Usage: werge glue 
+
+  Glue tokens back to text
 ```

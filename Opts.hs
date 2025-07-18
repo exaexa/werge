@@ -224,9 +224,15 @@ data Command
       , gmDoAdd :: Bool
       }
   | CmdDiff
-    { diffOld :: FilePath
-    , diffNew :: FilePath
-    }
+      { diffOld :: FilePath
+      , diffYour :: FilePath
+      , diffUnified :: Maybe Int
+      }
+  | CmdPatch
+      { patchMy :: FilePath
+      }
+  | CmdBreak
+  | CmdGlue
   deriving (Show)
 
 cmdDiff3 :: Parser Command
@@ -254,12 +260,11 @@ cmdGitMerge = do
       ]
   gmDoAdd <-
     asum
-      [ flag'
-          True
-          (long "add"
-             <> short 'a'
-             <> help "Run `git add' for fully merged files")
-      , flag' False (long "no-add" <> help "Prevent running `git add'")
+      [ flag' True
+          $ long "add"
+              <> short 'a'
+              <> help "Run `git add' for fully merged files"
+      , flag' False $ long "no-add" <> help "Prevent running `git add'"
       , pure False
       ]
   pure CmdGitMerge {..}
@@ -267,8 +272,30 @@ cmdGitMerge = do
 cmdDiff :: Parser Command
 cmdDiff = do
   diffOld <- strArgument $ metavar "OLDFILE" <> help "Original file version"
-  diffNew <- strArgument $ metavar "NEWFILE" <> help "File version with changes"
+  diffYour <-
+    strArgument $ metavar "YOURFILE" <> help "File version with changes"
+  diffUnified <-
+    asum
+      [ flag' (Just 20)
+          $ long "unified"
+              <> short 'u'
+              <> help
+                   "Produce unified-diff-like output for `patch' with default context size (20)"
+      , fmap Just . option auto
+          $ long "unified-size"
+              <> short 'U'
+              <> help "Produce unified diff with this context size"
+      , flag Nothing Nothing
+          $ long "merge"
+              <> short 'm'
+              <> help "Highlight the differences as with `merge' (default)"
+      ]
   pure CmdDiff {..}
+
+cmdPatch :: Parser Command
+cmdPatch = do
+  patchMy <- strArgument $ metavar "MYFILE" <> help "File to be modified"
+  pure CmdPatch {..}
 
 -- TODO have some option to output the (partially merged) my/old/your files so
 -- that folks can continue with external program or so (such as meld)
@@ -284,12 +311,21 @@ cmd =
             $ progDesc "Automerge unmerged files in git conflict"
         , command "diff"
             $ info cmdDiff
-            $ progDesc "Highlight differences between two files"
+            $ progDesc "Find differences between two files"
+        , command "patch"
+            $ info cmdPatch
+            $ progDesc "Apply a patch from `diff' to file"
+        , command "break"
+            $ info (pure CmdBreak)
+            $ progDesc "Break text to tokens"
+        , command "glue"
+            $ info (pure CmdGlue)
+            $ progDesc "Glue tokens back to text"
         ]
 
 parseOpts :: IO (Config, Command)
 parseOpts =
-  customExecParser (prefs helpShowGlobals)
+  customExecParser (prefs $ helpShowGlobals <> subparserInline)
     $ info
         (liftA2 (,) config cmd
            <**> helper

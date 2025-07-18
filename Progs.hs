@@ -21,8 +21,11 @@ bracketFile path mode = bracket (openFile path mode) hClose
 diffProg :: IO String
 diffProg = fromMaybe "diff" <$> lookupEnv "WERGE_DIFF"
 
-rundiff :: FilePath -> FilePath -> FilePath -> IO ()
-rundiff f1 f2 out = do
+patchProg :: IO String
+patchProg = fromMaybe "patch" <$> lookupEnv "WERGE_PATCH"
+
+runDiff :: FilePath -> FilePath -> FilePath -> IO ()
+runDiff f1 f2 out = do
   diff <- diffProg
   st <-
     bracketFile out WriteMode $ \oh ->
@@ -40,6 +43,27 @@ rundiff f1 f2 out = do
   when (st == ExitFailure 2) $ error "diff failed"
   unless (st `elem` [ExitSuccess, ExitFailure 1])
     $ error "diff failed for unknown reason (is GNU diffutils installed?)"
+
+runDiffRaw :: Int -> FilePath -> FilePath -> FilePath -> IO Bool
+runDiffRaw u f1 f2 out = do
+  diff <- diffProg
+  st <-
+    bracketFile out WriteMode $ \oh ->
+      withCreateProcess
+        (proc diff ["--text", "--unified=" ++ show u, f1, f2])
+          {std_in = NoStream, std_out = UseHandle oh} $ \_ _ _ -> waitForProcess
+  unless (st `elem` [ExitSuccess, ExitFailure 1]) $ error "diff failed"
+  pure (st /= ExitSuccess) -- report if diff thinks that the files differed
+
+runPatch :: FilePath -> Handle -> IO Bool
+runPatch f hi = do
+  patch <- patchProg
+  st <-
+    withCreateProcess
+      (proc patch ["--silent", "--batch", "--merge=diff3", f])
+        {std_in = UseHandle hi} $ \_ _ _ -> waitForProcess
+  unless (st `elem` [ExitSuccess, ExitFailure 1]) $ error "patch failed"
+  pure (st /= ExitSuccess) -- report if patch thinks that stuff has failed
 
 {-
  - interface to git
@@ -115,17 +139,19 @@ gitAdd path = do
  - TODO this might probably enforce joinSpaces?
  - or have joinSpaces as configurable? (probably best, default true)
  -}
-hSplitToFile :: Config -> Handle -> FilePath -> IO ()
-hSplitToFile cfg h path =
+hSplit :: Config -> Handle -> Handle -> IO ()
+hSplit cfg hi ho =
   case cfgTokenizer cfg of
     TokenizeCharCategory -> internal Toks.splitCategory
     TokenizeCharCategorySimple -> internal Toks.splitSimple
     TokenizeFilter fltr -> do
       st <-
-        bracketFile path WriteMode $ \ho ->
-          withCreateProcess
-            (shell fltr) {std_in = UseHandle h, std_out = UseHandle ho} $ \_ _ _ ->
-            waitForProcess
+        withCreateProcess
+          (shell fltr) {std_in = UseHandle ho, std_out = UseHandle ho} $ \_ _ _ ->
+          waitForProcess
       unless (st == ExitSuccess) $ error "tokenize filter failed"
   where
-    internal s = hGetContents h >>= writeFile path . Toks.toFile . s
+    internal s = hGetContents hi >>= hPutStr ho . Toks.toFile . s
+
+hSplitToFile :: Config -> Handle -> FilePath -> IO ()
+hSplitToFile cfg hi path = bracketFile path WriteMode $ hSplit cfg hi

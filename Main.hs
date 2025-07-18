@@ -19,6 +19,8 @@ import Progs
 import qualified Toks
 import Toks (Tok)
 
+import Debug.Trace
+
 {-
  - merge algorithms
  -}
@@ -41,6 +43,36 @@ data Merged
   | Replace [String] [String]
   | Conflict [String] [String] [String]
   deriving (Show)
+
+pmerge :: FilePath -> IO [Merged]
+pmerge path = go . lines <$> readFile path
+  where
+    go [] = []
+    go xs@(x:_)
+      | Toks.tok x = goOk xs
+      | otherwise = goC0 xs
+    eat = span Toks.tok
+    goOk xs =
+      let (a, xs') = eat xs
+       in Ok a : go xs'
+    goC0 ("<<<<<<<":xs) =
+      let (m, xs') = eat xs
+       in goC1 m xs'
+    goC0 (x:_) = error $ "unexpected token: " ++ x
+    goC0 [] = error "unexpected end"
+    goC1 m ("|||||||":xs) =
+      let (o, xs') = eat xs
+       in goC2 m o xs'
+    goC1 _ (x:_) = error $ "unexpected token: " ++ x
+    goC1 _ [] = error "unexpected end"
+    goC2 m o ("=======":xs) =
+      let (y, xs') = eat xs
+       in goC3 m o y xs'
+    goC2 _ _ (x:_) = error $ "unexpected token: " ++ x
+    goC2 _ _ [] = error "unexpected end"
+    goC3 m o y (">>>>>>>":xs) = Conflict m o y : go xs
+    goC3 _ _ _ (x:_) = error $ "unexpected token: " ++ x
+    goC3 _ _ _ [] = error "unexpected end"
 
 isKeepTok :: (Op, String) -> Bool
 isKeepTok (Keep, _) = True
@@ -182,19 +214,19 @@ expand n = go
     go [] = []
     go (x@(Conflict m1 o1 y1):xs) =
       case go xs of
-        (Conflict m2 o2 y2:xs') | n > 0 ->
-          Conflict (m1 ++ m2) (o1 ++ o2) (y1 ++ y2) : xs'
+        (Conflict m2 o2 y2:xs')
+          | n > 0 -> Conflict (m1 ++ m2) (o1 ++ o2) (y1 ++ y2) : xs'
         (Ok a:Conflict m2 o2 y2:xs')
           | length a < n ->
             Conflict (m1 ++ a ++ m2) (o1 ++ a ++ o2) (y1 ++ a ++ y2) : xs'
         xs' -> x : xs'
-    go (x@(Replace o1 n1):xs) = case go xs of
-      (Replace o2 n2:xs') | n > 0 ->
-          Replace (o1++o2) (n1++n2): xs'
-      (Ok a:Replace o2 n2:xs')
-        | length a < n ->
-          Replace (o1++a++o2) (n1++a++n2): xs'
-      xs' -> x : xs'
+    go (x@(Replace o1 n1):xs) =
+      case go xs of
+        (Replace o2 n2:xs')
+          | n > 0 -> Replace (o1 ++ o2) (n1 ++ n2) : xs'
+        (Ok a:Replace o2 n2:xs')
+          | length a < n -> Replace (o1 ++ a ++ o2) (n1 ++ a ++ n2) : xs'
+        xs' -> x : xs'
     go (x:xs) = x : go xs
 
 resolve :: Config -> Merged -> Merged
@@ -224,7 +256,7 @@ merge cfg@Config {..} ms ys =
     . regroup
     $ align (chunks ms) (chunks ys)
 
-diff Config{..} = expand cfgContext . chunks
+diff Config {..} = expand cfgContext . chunks
 
 {-
  - front-end
@@ -261,8 +293,8 @@ runCmd CmdDiff3 {..} cfg =
           map (workdir </>) ["my", "old", "your", "mydiff", "yourdiff"]
     for_ [(d3my, fMy), (d3old, fOld), (d3your, fYour)] $ \(path, tmp) ->
       bracketFile path ReadMode $ \h -> hSplitToFile cfg h tmp
-    rundiff fOld fMy fdMy
-    rundiff fOld fYour fdYour
+    runDiff fOld fMy fdMy
+    runDiff fOld fYour fdYour
     conflicted <-
       merge cfg <$> pdiff fdMy <*> pdiff fdYour >>= format cfg stdout
     if conflicted
@@ -280,8 +312,8 @@ runCmd CmdGitMerge {..} cfg = do
         let [fMy, fOld, fYour, fdMy, fdYour] =
               map (workdir </>) ["my", "old", "your", "mydiff", "yourdiff"]
         gitCheckoutMOY cfg u fMy fOld fYour
-        rundiff fOld fMy fdMy
-        rundiff fOld fYour fdYour
+        runDiff fOld fMy fdMy
+        runDiff fOld fYour fdYour
         readFile u >>= writeFile (u ++ ".werge-backup")
         conflict <-
           bracketFile u WriteMode $ \h ->
@@ -293,14 +325,32 @@ runCmd CmdGitMerge {..} cfg = do
     else exitSuccess
 runCmd CmdDiff {..} cfg = do
   withSystemTempDirectory "werge-diff" $ \workdir -> do
-    let [fOld, fNew, fDiff] = map (workdir </>) ["old", "new", "diff"]
-    for_ [(diffOld, fOld), (diffNew, fNew)] $ \(path, tmp) ->
+    let [fOld, fYour, fDiff] = map (workdir </>) ["old", "your", "diff"]
+    for_ [(diffOld, fOld), (diffYour, fYour)] $ \(path, tmp) ->
       bracketFile path ReadMode $ \h -> hSplitToFile cfg h tmp
-    rundiff fOld fNew fDiff
-    conflicted <- pdiff fDiff >>= format cfg stdout . diff cfg
+    conflicted <-
+      case diffUnified of
+        Just u -> do
+          c <- runDiffRaw u fOld fYour fDiff
+          readFile fDiff >>= putStr . unlines . drop 2 . lines
+          pure c
+        Nothing -> do
+          runDiff fOld fYour fDiff
+          pdiff fDiff >>= format cfg stdout . diff cfg
     if conflicted
       then exitWith (ExitFailure 1)
       else exitSuccess
+runCmd CmdPatch {..} cfg = do
+  withSystemTempDirectory "werge-patch" $ \workdir -> do
+    let f = workdir </> "file"
+    bracketFile patchMy ReadMode $ \h -> hSplitToFile cfg h f
+    _ <- runPatch f stdin
+    conflicted <- pmerge f >>= format cfg stdout -- TODO try to resolve more?
+    if conflicted
+      then exitWith (ExitFailure 1)
+      else exitSuccess
+runCmd CmdBreak cfg = hSplit cfg stdin stdout
+runCmd CmdGlue _ = getContents >>= putStr . Toks.glue . Toks.fromFile
 
 main :: IO ()
 main = catch go bad

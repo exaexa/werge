@@ -18,15 +18,19 @@ unescape ('\\':'n':xs) = '\n' : unescape xs
 unescape ('\\':_) = error "bad escape on input"
 unescape (x:xs) = x : unescape xs
 
+tok ('.':_) = True
+tok ('/':_) = True
+tok _ = False
+
 markSpace :: String -> Tok
 markSpace [] = error "empty token"
 markSpace s@(c:_)
   | isSpace c = '.' : s
-  | otherwise = '|' : s
+  | otherwise = '/' : s
 
 unmarkSpace :: Tok -> String
 unmarkSpace ('.':s) = s
-unmarkSpace ('|':s) = s
+unmarkSpace ('/':s) = s
 unmarkSpace _ = error "bad space marking on input"
 
 space :: Tok -> Bool
