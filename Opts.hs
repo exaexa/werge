@@ -230,6 +230,7 @@ data Command
       }
   | CmdPatch
       { patchMy :: FilePath
+      , patchInput :: Maybe FilePath
       }
   | CmdBreak
   | CmdGlue
@@ -295,6 +296,12 @@ cmdDiff = do
 cmdPatch :: Parser Command
 cmdPatch = do
   patchMy <- strArgument $ metavar "MYFILE" <> help "File to be modified"
+  patchInput <-
+    optional . strOption
+      $ long "patch"
+          <> short 'p'
+          <> metavar "PATCH"
+          <> help "File with the patch (default: stdin)"
   pure CmdPatch {..}
 
 -- TODO have some option to output the (partially merged) my/old/your files so
@@ -314,7 +321,7 @@ cmd =
             $ progDesc "Find differences between two files"
         , command "patch"
             $ info cmdPatch
-            $ progDesc "Apply a patch from `diff' to file"
+            $ progDesc "Modify a file using a patch from `diff'"
         , command "break"
             $ info (pure CmdBreak)
             $ progDesc "Break text to tokens"

@@ -344,7 +344,10 @@ runCmd CmdPatch {..} cfg = do
   withSystemTempDirectory "werge-patch" $ \workdir -> do
     let f = workdir </> "file"
     bracketFile patchMy ReadMode $ \h -> hSplitToFile cfg h f
-    _ <- runPatch f stdin
+    _ <-
+      case patchInput of
+        Nothing -> runPatch f stdin
+        Just path -> bracketFile path ReadMode $ runPatch f
     conflicted <- pmerge f >>= format cfg stdout -- TODO try to resolve more?
     if conflicted
       then exitWith (ExitFailure 1)
