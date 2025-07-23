@@ -30,13 +30,16 @@ data Op
   | Add
   deriving (Show, Eq)
 
-pdiff :: FilePath -> IO [(Op, Tok)]
-pdiff path = map go . lines <$> readFile path
+pdiff' :: [String] -> [(Op, Tok)]
+pdiff' = map go
   where
     go ('-':s) = (Del, s)
     go (' ':s) = (Keep, s)
     go ('+':s) = (Add, s)
-    go _ = error "unexpected output from diff"
+    go _ = error "unexpected contents in diff"
+
+pdiff :: FilePath -> IO [(Op, Tok)]
+pdiff path = pdiff' . lines <$> readFile path
 
 data Merged
   = Ok [String]
@@ -286,6 +289,21 @@ format Config {..} h = go False
             [cfgLabelStart, Toks.glue o, cfgLabelDiff, Toks.glue n, cfgLabelEnd]
       go True xs
 
+fmtPatch :: Config -> Handle -> Handle -> IO ()
+fmtPatch cfg out h = hGetContents h >>= go . lines
+  where
+    go all@(l:ls)
+      | patchLine l = do
+        let (p, ls') = span patchLine all
+        format cfg out . chunks $ pdiff' p
+        go ls'
+      | otherwise = hPutStrLn out l >> go ls
+    go [] = pure ()
+    patchLine (' ':_) = True
+    patchLine ('-':_) = True
+    patchLine ('+':_) = True
+    patchLine _ = False
+
 runCmd :: Command -> Config -> IO ()
 runCmd CmdDiff3 {..} cfg =
   withSystemTempDirectory "werge-diff3" $ \workdir -> do
@@ -343,15 +361,21 @@ runCmd CmdDiff {..} cfg = do
 runCmd CmdPatch {..} cfg = do
   withSystemTempDirectory "werge-patch" $ \workdir -> do
     let f = workdir </> "file"
-    bracketFile patchMy ReadMode $ \h -> hSplitToFile cfg h f
-    _ <-
-      case patchInput of
-        Nothing -> runPatch f stdin
-        Just path -> bracketFile path ReadMode $ runPatch f
-    conflicted <- pmerge f >>= format cfg stdout -- TODO try to resolve more?
-    if conflicted
-      then exitWith (ExitFailure 1)
-      else exitSuccess
+    case patchTarget of
+      Just patchMy -> do
+        bracketFile patchMy ReadMode $ \h -> hSplitToFile cfg h f
+        _ <-
+          case patchInput of
+            Nothing -> runPatch f stdin
+            Just path -> bracketFile path ReadMode $ runPatch f
+        conflicted <- pmerge f >>= format cfg stdout -- TODO try to resolve more?
+        if conflicted
+          then exitWith (ExitFailure 1)
+          else exitSuccess
+      Nothing -> do
+        case patchInput of
+          Nothing -> fmtPatch cfg stdout stdin
+          Just path -> bracketFile path ReadMode $ fmtPatch cfg stdout
 runCmd CmdBreak cfg = hSplit cfg stdin stdout
 runCmd CmdGlue _ = getContents >>= putStr . Toks.glue . Toks.fromFile
 

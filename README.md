@@ -279,12 +279,15 @@ Available options:
 
 #### Patching files in place
 ```
-Usage: werge patch MYFILE
+Usage: werge patch (MYFILE | (-f|--format)) [-p|--patch PATCH]
 
-  Apply a patch from `diff' to file
+  Modify a file using a patch from `diff'
 
 Available options:
-  MYFILE                   File to be modified
+  MYFILE                   File to be patched
+  -f,--format              Do not patch anything, only format the patch using
+                           conflict marks on joined tokens
+  -p,--patch PATCH         File with the patch (default: stdin)
   -h,--help                Show this help text
 ```
 

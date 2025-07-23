@@ -229,7 +229,7 @@ data Command
       , diffUnified :: Maybe Int
       }
   | CmdPatch
-      { patchMy :: FilePath
+      { patchTarget :: Maybe FilePath
       , patchInput :: Maybe FilePath
       }
   | CmdBreak
@@ -295,7 +295,15 @@ cmdDiff = do
 
 cmdPatch :: Parser Command
 cmdPatch = do
-  patchMy <- strArgument $ metavar "MYFILE" <> help "File to be modified"
+  patchTarget <-
+    asum
+      [ Just <$> strArgument (metavar "MYFILE" <> help "File to be patched")
+      , flag' Nothing
+          $ long "format"
+              <> short 'f'
+              <> help
+                   "Do not patch anything, only format the patch using conflict marks on joined tokens"
+      ]
   patchInput <-
     optional . strOption
       $ long "patch"
