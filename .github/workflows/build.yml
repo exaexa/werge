@@ -8,17 +8,26 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    name: Build ${{ github.ref_name }} OS:${{ matrix.os }} GHC:${{ matrix.ghc }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, macos-15]
+        ghc:
+          - "9.6"
+          - "9.12"
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
       - uses: haskell-actions/setup@v2
         with:
-          ghc-version: '9.4'
-      - run: |
-          cabal build
-          xz -9 < `cabal exec which werge` > werge-${{ github.ref_name }}-`uname -m`.xz
+          ghc-version: ${{ matrix.ghc }}
+      - name: build
+        run: |
+          mkdir dist
+          cabal install exe:werge --install-method=copy --overwrite-policy=always --installdir=dist
+          strip dist/werge
+          mv dist/werge dist/werge-${{ github.ref_name }}_${{ matrix.os }}_ghc-${{ matrix.ghc }}
+          xz dist/werge-*
       - uses: softprops/action-gh-release@v2
         with:
-          files: werge-*.xz
+          files: dist/werge-*.xz

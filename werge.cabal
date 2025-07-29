@@ -1,6 +1,6 @@
 cabal-version:   3.0
 name:            werge
-version:         0.1.0.0
+version:         0.2.0.0
 synopsis:        mergetool for mangled-up bite-size changes
 license:         GPL-3.0-or-later
 license-file:    LICENSE
