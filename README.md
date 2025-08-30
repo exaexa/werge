@@ -85,15 +85,21 @@ I still cannot do verses.
 - Some tokens are marked as spaces by the tokenizer, which allows the merge
   algorithm to be (selectively) more zealous when resolving conflicts on these.
 
-Compared to e.g. `difftastic`, `mergiraf` and similar tools, **`werge` is
-completely oblivious about the actual file structure** and works on any file
-type. This choice trades off some merge quality for (a lot of) complexity.
+Technically, the ideas are similar to
+[`spiff`](http://hpux.connect.org.uk/hppd/hpux/Text/spiff-1.0/) or `git diff
+--word-diff`.  Other tools exist such as
+[`difftastic`](https://difftastic.wilfred.me.uk/) and
+[`mergiraf`](https://mergiraf.org/) that are aware of the file structure (i.e.,
+the actual syntax _tree_) that can be used to improve output.  Compared to
+these, **`werge` is completely oblivious about the actual file structure**, and
+thus works quite well on any file type.  This choice trades off some diff&merge
+quality for (a lot of) complexity.
 
-Tokenizers are simple, implementable as linear scanners that print separate
-tokens on individual lines that are prefixed with a space mark (`.` for space
-and `/` for non-space), and also escape newlines and backslashes. A default
-tokenization of string "hello \ world" with a new line at the end is listed
-below (note the invisible space on the lines with dots):
+Tokenizers in `werge` are simple, implementable as linear scanners that print
+separate tokens on individual lines that are prefixed with a space mark (`.`
+for space and `/` for non-space), and escape newlines and backslashes. A
+default tokenization of string "hello \ world" with a new line at the end is
+listed below (note the invisible space on the lines with dots):
 
 ```
 /hello
