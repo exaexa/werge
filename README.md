@@ -221,6 +221,10 @@ marked files in the repository. On conflict, you will have the files marked
 with the usual (werge's usual) conflict markers, and you will be able to
 resolve them just as with the normal merging workflow.
 
+**Hint:** As with `spacewerge` mergetool above, it is beneficial to add a few
+conflict-resolving options such as `-s` to the `driver`, in order to help the
+automerges pass nicely.
+
 ### Use with `git rebase`
 
 The merge driver and mergetools as configured above will also automatically
