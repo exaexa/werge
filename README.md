@@ -21,21 +21,42 @@ Separate `diff`&`patch` functionality is provided too for sending
 token-granularity patches. (The patches are similar to what `git diff
 --word-diff` produces, but can be applied to files.)
 
+## Installation
+
+- To build from source, clone the repo and run `cabal install` in the directory
+  (you need [a way to compile Haskell](https://www.haskell.org/downloads/)).
+- [Releases](https://github.com/exaexa/werge/releases) come with prebuilt
+  binaries that you may download and run as-is on many Linuxes and Macs.
+
+Running of `werge` requires working installations of `diff` and `patch`
+compatible with the ones from [GNU
+diffutils](https://www.gnu.org/software/diffutils/):
+- Most Linux distributions contain the correct diffutils
+- On BSDs you should be able to install these from Ports
+  ([FreeBSD](https://cgit.freebsd.org/ports/tree/textproc/diffutils),
+  [OpenBSD](https://openports.eu/ports/textproc/gdiff))
+- On Macs, install [diffutils from
+  brew](https://formulae.brew.sh/formula/diffutils).
+
+In any other case, you may set up a path to any compatible `diff` and `patch`
+(or suitable wrapper scripts) via environment variables `WERGE_DIFF` and
+`WERGE_PATCH`. (If required, the same applies for `WERGE_GIT`.)
+
 ## Demo
 
-Original (`old` file):
+##### Original (`old` file):
 ```
 Roses are red. Violets are blue.
 Patch is quite hard. I cannot rhyme.
 ```
 
-Local changes (`my` file):
+##### Local changes (`my` file):
 ```
 Roses are red. Violets are blue.
 Patching is hard. I still cannot rhyme.
 ```
 
-Remote changes (`your` file):
+##### Remote changes (`your` file):
 ```
 Roses are red.
 Violets are blue.
@@ -43,8 +64,10 @@ Patch is quite hard.
 I cannot do verses.
 ```
 
-Token-merged version with `werge merge my orig your` (conflicts on the space
-change that is too close to the disappearing "still" token):
+##### Token-merged version
+
+This is produced with `werge merge my orig your` (conflicts on the space change
+that is too close to the disappearing "still" token):
 ```
 Roses are red.
 Violets are blue.
@@ -53,8 +76,10 @@ I>>>>> cannot do verses.
 ```
 (NOTE: option `-G` gives nicely colored output that is much easier to read.)
 
-Token-merged version with separate space resolution using `-s` (conflicts get
-fixed separately):
+##### Merge with separate space resultion
+Adding option `-s` to `werge merge` causes it to resolve space conflicts
+separately, usually helping many cases that would be easily resolvable by a
+human:
 ```
 Roses are red.
 Violets are blue.
@@ -62,6 +87,7 @@ Patching is hard.
 I still cannot do verses.
 ```
 
+##### Mixing in unresolvable conflict
 A harder-conflicting file (`theirs`):
 ```
 Roses are red.
@@ -133,17 +159,6 @@ I previously made an attempt to solve this in `adiff` software, which failed
 because the approach was too complex. Before that, the issue was tackled by
 Arek Antoniewicz on MFF CUNI, who used regex-edged DFAs (REDFAs) to construct
 user-specifiable tokenizers in a pretty cool way.
-
-## Installation
-
-```sh
-cabal install
-```
-
-Running of `werge` requires a working installation of `diff` compatible
-with the one from [GNU diffutils](https://www.gnu.org/software/diffutils/). You
-may set up a path to such `diff` (or a wrapper script) via environment variable
-`WERGE_DIFF`.
 
 ## Integration with `git`
 
