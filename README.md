@@ -228,8 +228,8 @@ work with `git rebase` that runs in the "merge mode" (which is the default).
 
 As a possible source of confusion, the "my" and "your" versions are somewhat swapped (as implied by semantics):
 
-- With `git checkout mybranch; git merge otherbranch`, the conflicts contents
-  will contain roughly:
+- With `git checkout mybranch; git merge otherbranch`, the conflicts will look
+  roughly like this:
   ```
   <<<<< mybranch version ||||| merge base ===== otherbranch version >>>>>
   ```
