@@ -145,7 +145,9 @@ with the one from [GNU diffutils](https://www.gnu.org/software/diffutils/). You
 may set up a path to such `diff` (or a wrapper script) via environment variable
 `WERGE_DIFF`.
 
-## Use with `git`
+## Integration with `git`
+
+### Automerging conflicts
 
 `werge` can automatically process files that are marked in `git` as merge
 conflicts:
@@ -160,6 +162,64 @@ tries to merge them token-by-token, and if the merge is successful with current
 settings it runs `git add` on them. The current changes in the files are
 replaced by the merged (or partially merged) state; backups are written
 automatically to `filename.werge-backup`.
+
+Optionally, you can specify exact files to be automerged. That is useful for
+cases when only some of the conflicting files should be processed by `werge`:
+
+```sh
+$ werge git my/conflicting/file.txt
+```
+
+Support for merging complex types of changes (deletes, directory moves,
+symlinks, ...) via this interface is currently limited. `werge` can be used as
+a mergetool or a merge driver to ameliorate that.
+
+### Use as `git difftool` and `git mergetool`
+
+The `git` config below allows direct use of `werge` as `git difftool -t werge`
+and `git mergetool -t werge`:
+```ini
+[difftool "werge"]
+	cmd = werge diff -G $LOCAL $REMOTE
+[mergetool "werge"]
+	cmd = werge merge $LOCAL $BASE $REMOTE > $MERGED
+	trustExitCode = true
+
+# variant for separate resolution of space (solves more conflicts):
+[mergetool "spacewerge"]
+	cmd = werge merge -s $LOCAL $BASE $REMOTE > $MERGED
+	trustExitCode = true
+```
+
+One issue with `git` mergetools is that they are supposed to be interactive,
+and thus `git` assumes them to always produce a completely merged, conflictless
+result. In turn, the auto-merging with `git mergetool -t werge` fails with
+conflicts, `git` assumes a complete failure and restores the original version
+from the backup. To enable a more useful behavior, use `werge` as a merge
+driver (see below).
+
+### Use as a `git` merge driver
+
+Add this to your git config:
+```ini
+[merge "werge"]
+	name = werge
+	driver = werge merge %A %O %B > %P
+	recursive = binary
+```
+
+Then, specify that the "werge" driver should be used for certain files in your
+repository's `.gitattributes`:
+```
+*.md merge=werge
+*.tex merge=werge
+# ... etc
+```
+
+With this in place, `git merge` will automatically run `werge` to merge the
+marked files in the repository. On conflict, you will have the files marked
+with the usual (werge's usual) conflict markers, and you will be able to
+resolve them just as with the normal merging workflow.
 
 ## Current `--help` and features
 
