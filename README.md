@@ -221,6 +221,23 @@ marked files in the repository. On conflict, you will have the files marked
 with the usual (werge's usual) conflict markers, and you will be able to
 resolve them just as with the normal merging workflow.
 
+### Use with `git rebase`
+
+The merge driver and mergetools as configured above will also automatically
+work with `git rebase` that runs in the "merge mode" (which is the default).
+
+As a possible source of confusion, the "my" and "your" versions are somewhat swapped (as implied by semantics):
+
+- With `git checkout mybranch; git merge otherbranch`, the conflicts contents
+  will contain roughly:
+  ```
+  <<<<< mybranch version ||||| merge base ===== otherbranch version >>>>>
+  ```
+- With `git checkout mybranch; git rebase otherbranch`, the logic is reversed:
+  ```
+  <<<<< otherbranch version ||||| common base ===== mybranch version >>>>>
+  ```
+
 ## Current `--help` and features
 
 ```
