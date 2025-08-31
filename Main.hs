@@ -385,4 +385,4 @@ main = catch go bad
     go = parseOpts >>= uncurry (flip runCmd)
     bad e = do
       hPutStrLn stderr $ "fatal: " ++ displayException (e :: IOException)
-      exitWith (ExitFailure 2)
+      exitWith (ExitFailure 129)
