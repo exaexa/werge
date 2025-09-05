@@ -207,8 +207,8 @@ and `git mergetool -t werge`:
 ```
 
 One issue with `git` mergetools is that they are supposed to be interactive,
-and thus `git` assumes them to always produce a completely merged, conflictless
-result. In turn, the auto-merging with `git mergetool -t werge` fails with
+and thus `git` expects them to always produce a completely merged, conflictless
+result. In turn, if the auto-merging with `git mergetool -t werge` fails with
 conflicts, `git` assumes a complete failure and restores the original version
 from the backup. To enable a more useful behavior, use `werge` as a merge
 driver (see below).
