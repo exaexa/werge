@@ -66,7 +66,7 @@ I cannot do verses.
 
 ##### Token-merged version
 
-This is produced with `werge merge my orig your` (conflicts on the space change
+This is produced with `werge merge my old your` (conflicts on the space change
 that is too close to the disappearing "still" token):
 ```
 Roses are red.
@@ -88,7 +88,7 @@ I still cannot do verses.
 ```
 
 ##### Mixing in unresolvable conflict
-A harder-conflicting file (`theirs`):
+A harder-conflicting file (`their`):
 ```
 Roses are red.
 Violets are blue.
@@ -96,7 +96,7 @@ Merging is quite hard.
 I cannot do verses.
 ```
 
-`werge merge mine orig theirs -s` highlights the actual unmergeable change:
+`werge merge my old their -s` highlights the actual unmergeable change:
 ```
 Roses are red.
 Violets are blue.
