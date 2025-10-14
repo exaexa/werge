@@ -13,8 +13,8 @@ endif
 " syntax for the werge files
 syntax region wergeHunk start=/<<<<</ end=/>>>>>/ contains=wergeRm,wergeDiffAdd,wergeConflictOrigAdd
 syntax region wergeRm  start=/<<<<</hs=e+1  end=/|||||/he=s-1,me=s-1 contained
-syntax match wergeDiffAdd /|||||\([^>=]\|>\{1,4\}>\@!\|=\{1,4\}=\@!\)*>>>>>/ms=s+5,me=e-5 contained
-syntax match wergeConflictOrigAdd /|||||\([^=>]\|=\{1,4\}=\@!\|>\{1,4\}>\@!\)*=====\([^=>]\|=\{1,4\}=\@!\|>\{1,4\}>\@!\)*>>>>>/me=e-5 contained contains=wergeConflictOrig,wergeconflictAdd
+syntax match wergeDiffAdd /|||||\(\_[^>=]\|>\{1,4\}>\@!\|=\{1,4\}=\@!\)*>>>>>/ms=s+5,me=e-5 contained
+syntax match wergeConflictOrigAdd /|||||\(\_[^=>]\|=\{1,4\}=\@!\|>\{1,4\}>\@!\)*=====\(\_[^=>]\|=\{1,4\}=\@!\|>\{1,4\}>\@!\)*>>>>>/me=e-5 contained contains=wergeConflictOrig,wergeconflictAdd
 syntax region wergeConflictOrig start=/|||||/hs=e+1  end=/=====/he=s-1,me=s-1 contained
 syntax region wergeConflictAdd start=/=====/hs=e+1  end=/>>>>>/he=s-1,me=s-1 contained
 
