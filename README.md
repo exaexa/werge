@@ -42,6 +42,16 @@ In any other case, you may set up a path to any compatible `diff` and `patch`
 (or suitable wrapper scripts) via environment variables `WERGE_DIFF` and
 `WERGE_PATCH`. (If required, the same applies for `WERGE_GIT`.)
 
+### Editor integration
+
+There's a `vim` syntax highlighting file in `vim/werge.vim`. To install, simply
+copy it to your local `vim` syntax configuration directory (usually to
+`~/.vim/syntax/werge.vim`). Then, you can activate the syntax in vim with:
+
+```
+:set syn=werge
+```
+
 ## Demo
 
 ##### Original (`old` file):
@@ -74,7 +84,8 @@ Violets are blue.
 Patching is hard.<<<<< I still||||| I=====
 I>>>>> cannot do verses.
 ```
-(NOTE: option `-G` gives nicely colored output that is much easier to read.)
+(NOTE: option `-G` gives nicely colored output that is much easier to read.
+Alternatively you can install the syntax highlighting for `vim`.)
 
 ##### Merge with separate space resultion
 Adding option `-s` to `werge merge` causes it to resolve space conflicts
