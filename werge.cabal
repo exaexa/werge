@@ -4,6 +4,7 @@ version:         0.2.1.0
 synopsis:        mergetool for mangled-up bite-size changes
 license:         GPL-3.0-or-later
 license-file:    LICENSE
+copyright:       (c) 2025 Mirek Kratochvil
 author:          Mirek Kratochvil
 maintainer:      exa.exa@gmail.com
 
