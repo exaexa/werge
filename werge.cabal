@@ -10,7 +10,7 @@ maintainer:      exa.exa@gmail.com
 -- copyright:
 category:        Text
 build-type:      Simple
-extra-doc-files: CHANGELOG.md
+extra-doc-files: README.md vim/werge.vim
 
 -- extra-source-files:
 
