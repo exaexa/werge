@@ -1,0 +1,2 @@
+dist-ghc/build/werge/werge usr/bin
+vim/werge.vim usr/share/werge

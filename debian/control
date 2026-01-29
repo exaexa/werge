@@ -1,0 +1,28 @@
+Source: haskell-werge
+Maintainer: Mirek Kratochvil <exa.exa@gmail.com>
+Priority: optional
+Section: haskell
+Rules-Requires-Root: no
+Build-Depends: debhelper-compat (= 13),
+ haskell-devscripts-minimal | haskell-devscripts (>= 0.16.42),
+ dh-sequence-haskell,
+ ghc,
+ libghc-optparse-applicative-dev,
+ libghc-temporary-dev,
+Standards-Version: 4.7.3
+Description: mergetool for mangled-up bite-size changes
+
+Package: werge
+Architecture: any
+Section: misc
+Depends: ${haskell:Depends},
+ ${misc:Depends},
+ ${shlibs:Depends},
+Recommends: ${haskell:Recommends},
+Suggests: ${haskell:Suggests},
+Conflicts: ${haskell:Conflicts},
+Provides: ${haskell:Provides},
+Description: ${haskell:ShortDescription}${haskell:ShortBlurb}
+ ${haskell:LongDescription}
+ .
+ ${haskell:Blurb}

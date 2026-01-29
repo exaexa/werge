@@ -1,7 +1,13 @@
 cabal-version:   3.0
 name:            werge
-version:         0.2.1.0
+version:         0.2.1.1
 synopsis:        mergetool for mangled-up bite-size changes
+description:     werge is able to effectively diff, patch and merge various
+                 annoying changes that make usual line-based merging
+                 impossible. For example, it can automatically resolve
+                 non-conflicting edits in a long sentence on a single line, and
+                 merges changes done on different code formatting and
+                 indentation, or even in differently justified paragraphs.
 license:         GPL-3.0-or-later
 license-file:    LICENSE
 copyright:       (c) 2025 Mirek Kratochvil
