@@ -44,9 +44,10 @@ In any other case, you may set up a path to any compatible `diff` and `patch`
 
 ### Editor integration
 
-There's a `vim` syntax highlighting file in `vim/werge.vim`. To install, simply
-copy it to your local `vim` syntax configuration directory (usually to
-`~/.vim/syntax/werge.vim`). Then, you can activate the syntax in vim with:
+There's a `vim` syntax highlighting file for the token-merged format in
+`vim/werge.vim`. To install, simply copy it to your local `vim` syntax
+configuration directory (usually to `~/.vim/syntax/werge.vim`). Then, you can
+activate the syntax in vim with:
 
 ```
 :set syn=werge
@@ -113,6 +114,61 @@ Roses are red.
 Violets are blue.
 <<<<<Patching|||||Patch=====Merging>>>>> is hard.
 I still cannot do verses.
+```
+
+### A more extreme example
+
+Suppose you write a program like this:
+```c
+#include <stdio.h>
+
+void main(void) {
+ int i;
+ scanf("%d", &i);
+ printf("%d\n", i*123);
+}
+```
+
+Then you rename a variable:
+```c
+#include <stdio.h>
+
+void main(void) {
+ int tmp;
+ scanf("%d", &tmp);
+ printf("%d\n", tmp*123);
+}
+```
+
+But noes! A colleague already converted your program to C++, with the old
+variable name in place!
+```cpp
+#include <iostream>
+
+int main() {
+    int i;
+    std::cin
+        >> i;
+    std::cout
+        << i * 123
+        << std::endl;
+    return 0;
+}
+```
+
+Werge merge with options `-s -C0` still produces a clean merge:
+```cpp
+#include <iostream>
+
+int main() {
+    int tmp;
+    std::cin
+        >> tmp;
+    std::cout
+        << tmp * 123
+        << std::endl;
+    return 0;
+}
 ```
 
 ## How does it work?
