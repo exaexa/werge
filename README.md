@@ -118,7 +118,7 @@ I still cannot do verses.
 
 ### A more extreme example
 
-Suppose you write a program like this:
+Suppose you write a program `orig.c` like this:
 ```c
 #include <stdio.h>
 
@@ -129,7 +129,7 @@ void main(void) {
 }
 ```
 
-Then you rename a variable:
+Then you rename a variable (`mine.c`):
 ```c
 #include <stdio.h>
 
@@ -140,8 +140,9 @@ void main(void) {
 }
 ```
 
-But noes! A colleague already converted your program to C++, with the old
-variable name in place!
+But noes! A colleague already converted the old version of your program to C++
+(`theirs.cpp`), auto-indented it with some cool formatter, and the old variable
+name is still in place!
 ```cpp
 #include <iostream>
 
@@ -156,7 +157,8 @@ int main() {
 }
 ```
 
-Werge merge with options `-s -C0` still produces a clean merge:
+Luckily, `werge merge -s -C0 mine.c orig.c theirs.cpp` still produces a clean
+merge:
 ```cpp
 #include <iostream>
 
